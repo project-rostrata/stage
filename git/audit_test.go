@@ -65,10 +65,10 @@ func TestAuditTrailRecordsChangesOnly(t *testing.T) {
 		t.Errorf("trail at %s", path)
 	}
 	want := []string{
-		"ok      git --literal-pathspecs add -- a.txt",
-		`ok      git --literal-pathspecs add -- 'it'\''s new.txt'`,
-		"failed  git --literal-pathspecs apply --cached --recount --whitespace=nowarn -",
-		"ok      git commit --file .git/STAGE_MSG",
+		"ok      git -c core.fsmonitor=false --literal-pathspecs add -- a.txt",
+		`ok      git -c core.fsmonitor=false --literal-pathspecs add -- 'it'\''s new.txt'`,
+		"failed  git -c core.fsmonitor=false --literal-pathspecs apply --cached --recount --whitespace=nowarn -",
+		"ok      git -c core.fsmonitor=false --literal-pathspecs commit --file .git/STAGE_MSG",
 	}
 	if len(lines) != len(want) {
 		t.Fatalf("trail:\n%s", strings.Join(lines, "\n"))

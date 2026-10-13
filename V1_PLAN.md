@@ -200,3 +200,17 @@ What was built:
 - Tests: quoting (spaces, `*`, a quote, Japanese characters, a newline); that only changing commands are recorded, failures included; the exact recorded lines; reading the last lines of the trail.
 - The `a*` safety test passes with the flag.
 - In tmux: an empty trail; staging a file, staging a line and committing, each recorded; a failure (a stale `index.lock`) in red; Esc back to the diff.
+
+### Basic hardening — DONE
+
+At the human's request, after a question about what security audit a developer tool needs. The human decided:
+- `git commit` from stage behaves exactly as plain `git commit`, hooks included;
+- basic hardening, but no sandbox.
+
+What was built:
+- `guarded` in `git/repo.go` runs every command, the commit included, as `git -c core.fsmonitor=false --literal-pathspecs …`.
+- `openFile` opens `.git/STAGE_MSG` and `.git/stage.log` with `O_NOFOLLOW`.
+- `CommitDraft` refuses a draft that isn't a plain file.
+- The brief has a threat model (§4, "Security"), and AGENTS.md has a security review checklist.
+
+**Checked:** `git/hardening_test.go`, one test per attack, plus a patch round-trip with a path that looks like a patch header and a C1 control character in `TestPut`. Each test was run with its defence removed and failed. Without the plain-file check, stage committed the linked "private key" as the commit message.

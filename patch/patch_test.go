@@ -306,6 +306,19 @@ func TestPathsWithSpacesAndUnicode(t *testing.T) {
 	}
 }
 
+// A directory name can hold a newline and what looks like a patch header. git
+// quotes such paths in its diff, and the patch keeps the quoting, so staging a
+// line can't land in another file.
+func TestPathThatLooksLikeAPatchHeader(t *testing.T) {
+	crafted := "x\n+++ b/victim.txt"
+	name := crafted + "/f.txt"
+	tr := newRepo(t, map[string]string{name: "a\nb\n", "victim.txt": "safe\n"})
+	tr.write(name, "a\nb\nY\n")
+	tr.stage(name, "+Y")
+	check(t, "index", tr.index(name), "a\nb\nY\n")
+	check(t, "victim", tr.index("victim.txt"), "safe\n")
+}
+
 func TestNothingSelected(t *testing.T) {
 	tr := newRepo(t, map[string]string{"f.txt": "a\nb\n"})
 	tr.write("f.txt", "a\nX\nb\n")

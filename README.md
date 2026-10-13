@@ -57,11 +57,16 @@ Every git command stage runs that changes something is appended to `.git/stage.l
 time, `ok` or `failed`, and the exact command line:
 
 ```
-2026-10-12 23:13:01  ok      git --literal-pathspecs apply --cached --recount --whitespace=nowarn -
-2026-10-12 23:14:40  ok      git commit --file .git/STAGE_MSG
+2026-10-12 23:13:01  ok      git -c core.fsmonitor=false --literal-pathspecs apply --cached --recount --whitespace=nowarn -
+2026-10-12 23:14:40  ok      git -c core.fsmonitor=false --literal-pathspecs commit --file .git/STAGE_MSG
 ```
 
 Ctrl+O shows it inside stage; `tail -f .git/stage.log` works in another terminal.
+
+`-c core.fsmonitor=false` stops a repository's own config from making git run a program
+whenever stage refreshes. `git commit` otherwise behaves exactly as it does on the command
+line, hooks included. The brief's threat model (`PROJECT_BRIEF.md` §4) lists what stage
+trusts and how each case is tested.
 
 ## Documentation
 

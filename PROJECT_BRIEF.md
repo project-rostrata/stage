@@ -199,6 +199,32 @@ Raw mode turns off XON/XOFF and signal keys, so Ctrl+S, Ctrl+Q, Ctrl+C and Ctrl+
 
 **Refresh on focus, not on a timer.** The human edits files in other terminals while stage is open. stage turns on the terminal's focus reporting (`CSI ?1004h`), and re-reads status and the current diff whenever its window regains focus. Ctrl+R and F5 do the same by hand. There is no polling and no filesystem watching. A refresh keeps the selected file and scroll position where it can.
 
+### Security: what stage trusts, and what it doesn't
+
+stage is an ordinary process: it runs as the human, with everything they can read, and has no sandbox. A full sandbox (Landlock, bubblewrap, AppArmor) was considered and turned down. It would confine git and the human's hooks too, and break commit signing and any hook that needs more than the repository. Instead, stage makes sure that a repository it is started in, and the names and contents of its files, can't turn stage against the human.
+
+**Trusted:** the human, their global and system git config, the hooks they installed, and the `git` on their PATH. **`git commit` from stage behaves exactly as plain `git commit`:** hooks (including ones that run scripts from the repository, such as husky or pre-commit), signing, and the human's filters all run.
+
+**Not trusted:** file names, file contents, and a `.git` directory stage didn't make, such as one unpacked from an archive. A remote clone can't bring a `.git/config` or hooks with it, but an archive or a shared drive can. Against those:
+
+| Attack | Defence | Test |
+|---|---|---|
+| A repository's `core.fsmonitor` runs a program on every `status` (and stage reads status on every refresh) | Every command runs with `-c core.fsmonitor=false`. It's only a cache, so no result changes. | `TestRepositoryConfigCantRunAProgram` |
+| `diff.external` or a textconv driver runs a program on `diff` | `--no-ext-diff --no-textconv` | `TestDiffIgnoresHostileConfig` |
+| A file named like an option (`--all`) | Every path comes after `--` | `TestPathsThatLookLikeOptions` |
+| A file named like a pattern (`a*`) | `--literal-pathspecs` | `TestPathsAreLiteral` |
+| A directory name holding a newline and a fake `+++ b/other` header | git quotes such paths, and the patch keeps the quoting | `TestPathThatLooksLikeAPatchHeader` |
+| `.git/STAGE_MSG` links to a private key, which would be loaded into the message and committed | The draft is opened with `O_NOFOLLOW`, and committing checks it's a plain file | `TestDraftIsNeverReadOrWrittenThroughALink` |
+| `.git/stage.log` links to `~/.bashrc` | The trail is opened with `O_NOFOLLOW` | `TestAuditTrailIsNeverWrittenThroughALink` |
+| A `git` executable in the repository, with `.` in PATH | Go refuses to run a program found through `.` | `TestAGitInTheRepositoryIsNotRun` |
+| Escape sequences in a file name, a diff or git's error text (writing the clipboard, retitling the window) | Everything is drawn through `screen/`, which draws C0 and C1 control characters as `�` | `TestPut` |
+
+**Accepted:**
+- **Filters:** clean and smudge filters named in a repository's own `.git/config` still run on `status`, `diff`, `add` and `restore`. Turning them off would break git-lfs. git already refuses a repository owned by another user (`safe.directory`).
+- **The suspended commit:** `git commit`'s own output is shown raw on the normal screen, just as it is when the human runs it.
+
+**Credentials:** stage never fetches or pushes, so git never asks a credential helper for anything. Signing goes through the human's own agent, as with plain git.
+
 ## 5. Open questions
 
 None at the start of v1. Raise anything that comes up here before building it.

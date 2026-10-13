@@ -46,7 +46,7 @@ func (r *Repo) record(args []string, runErr error) error {
 	}
 	line := fmt.Sprintf("%s  %-6s  %s\n", time.Now().Format("2006-01-02 15:04:05"), status,
 		shellQuote(append([]string{"git"}, args...)))
-	f, err := os.OpenFile(p, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+	f, err := openFile(p, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
 	if err != nil {
 		return fmt.Errorf("write %s: %w", auditName, err)
 	}
@@ -64,7 +64,7 @@ func (r *Repo) AuditTrail(n int) ([]string, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	f, err := os.Open(p)
+	f, err := openFile(p, os.O_RDONLY, 0)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, p, nil
 	}

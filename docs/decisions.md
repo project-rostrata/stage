@@ -168,3 +168,20 @@ Each line is the time, `ok` or `failed`, and the command quoted for a POSIX shel
 ## 2026-10-12 — --literal-pathspecs replaces GIT_LITERAL_PATHSPECS=1
 
 The literal-paths protection (above) moved from the environment variable to git's equivalent global flag. Both behave the same, and `TestPathsAreLiteral` still pins it. But an environment variable is invisible in a recorded command line, and the trail should show exactly what ran: `git --literal-pathspecs add -- 'a*'` can be pasted and behaves the same.
+
+## 2026-10-13 — Basic hardening, no sandbox
+
+The human asked what security audit stage needs. They don't want stage ever to run code from a repository, to be open to git command injection, or to expose git credentials.
+
+The finding: a Go binary on Linux has no sandbox. stage runs as the human, so the useful question is what a repository, or a file name in it, can make stage or git do. `git status` runs a repository's `core.fsmonitor` command, which was confirmed in the sandbox, and stage reads status on every refresh.
+
+**Decided:**
+- **`git commit` from stage behaves exactly as plain `git commit`.** Hooks, including ones that run scripts committed in the repository, signing and filters all run.
+- **No sandbox.** Landlock, bubblewrap and AppArmor were considered. Landlock is the only one that fits a single binary without root, but it confines git and the hooks too, which breaks signing and hooks that need more than the repository.
+- **Every command runs with `-c core.fsmonitor=false`.** fsmonitor only speeds up status in very large trees, and no result changes. The flag is on `git commit` too: commit only uses fsmonitor to refresh the index, so its behaviour is unchanged. A human who uses git's built-in fsmonitor daemon gets slightly slower status from stage, and their own git keeps it.
+- **The draft and the audit trail are opened with `O_NOFOLLOW`, and the commit checks the draft is a plain file.** A planted link would otherwise load a private key into the message, commit it, or append to a file outside the repository.
+- **Filters are left alone.** A clean or smudge filter in a planted `.git/config` still runs, but turning filters off would break git-lfs. This is recorded as accepted in the brief.
+
+Already in place: argument lists, never a shell; `--` before paths; `--literal-pathspecs`; `--no-ext-diff --no-textconv`; control characters drawn as `�`; Go's refusal to run `./git` through `.` in PATH; `GOTOOLCHAIN=local`; no third-party modules. Each now has a test named in the brief's threat model.
+
+The audit trail's lines grow by `-c core.fsmonitor=false`. They stay exactly what ran.

@@ -46,6 +46,7 @@ func TestPut(t *testing.T) {
 		{"half a wide character becomes a space", "a中", 2, "a     ", 2},
 		{"combining mark joins its base", "éx", 10, "éx    ", 2},
 		{"control characters are made visible", "a\x1bb", 10, "a�b   ", 3},
+		{"so are C1 controls, which can start an escape sequence", "a\u009bb", 10, "a�b   ", 3},
 		{"clipped at the grid's edge", "abcdefgh", 100, "abcdef", 6},
 	}
 	for _, tt := range tests {

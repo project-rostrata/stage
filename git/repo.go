@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 )
 
 // Repo is a git working tree. Every command runs at its top level.
@@ -20,7 +21,7 @@ type Repo struct {
 
 // Open finds the working tree that contains dir.
 func Open(dir string) (*Repo, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd := exec.Command("git", guarded([]string{"rev-parse", "--show-toplevel"})...)
 	cmd.Dir = dir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -50,23 +51,29 @@ func (r *Repo) read(okCodes []int, args ...string) ([]byte, error) {
 // If the command worked but the trail couldn't be written, that is reported.
 func (r *Repo) write(stdin []byte, args ...string) error {
 	_, err := r.run(stdin, nil, nil, args...)
-	if logErr := r.record(literal(args), err); logErr != nil && err == nil {
+	if logErr := r.record(guarded(args), err); logErr != nil && err == nil {
 		return fmt.Errorf("done, but %w", logErr)
 	}
 	return err
 }
 
-// literal puts --literal-pathspecs in front of a command, so every path
-// argument means exactly that path, never a pattern: without it, deleting an
-// untracked file named "a*" with git clean also deletes ab.txt. It is a flag
-// rather than GIT_LITERAL_PATHSPECS=1 so the audit trail shows it.
-func literal(args []string) []string {
-	return append([]string{"--literal-pathspecs"}, args...)
+// guarded puts the options every command runs with in front of it. They are
+// flags rather than environment variables so the audit trail shows them.
+//
+//   - core.fsmonitor=false: a repository's own config can name a program for
+//     git to run on every status, diff and add. stage looks at whatever
+//     repository it is started in, often, so it never runs one. The setting is
+//     only a cache; turning it off changes no result.
+//   - --literal-pathspecs: every path means exactly that path, never a
+//     pattern. Without it, deleting an untracked file named "a*" with git
+//     clean also deletes ab.txt.
+func guarded(args []string) []string {
+	return append([]string{"-c", "core.fsmonitor=false", "--literal-pathspecs"}, args...)
 }
 
-// run runs git at the top level, with --literal-pathspecs.
+// run runs git at the top level, guarded.
 func (r *Repo) run(stdin []byte, okCodes []int, env []string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", literal(args)...)
+	cmd := exec.Command("git", guarded(args)...)
 	cmd.Dir = r.root
 	cmd.Env = append(os.Environ(), env...)
 	if stdin != nil {
@@ -99,4 +106,16 @@ func commandError(args []string, stderr string, err error) error {
 		return fmt.Errorf("%s: %s", sub, msg)
 	}
 	return fmt.Errorf("%s: %w", sub, err)
+}
+
+// openFile opens one of the files stage keeps in the git directory, never
+// through a symbolic link: in a .git that came from someone else, the draft
+// could link to a key that would be loaded into the message and committed, and
+// the audit trail to ~/.bashrc.
+func openFile(p string, flag int, perm os.FileMode) (*os.File, error) {
+	f, err := os.OpenFile(p, flag|syscall.O_NOFOLLOW, perm)
+	if errors.Is(err, syscall.ELOOP) {
+		return nil, fmt.Errorf("%s is a symbolic link; stage won't follow it", p)
+	}
+	return f, err
 }
