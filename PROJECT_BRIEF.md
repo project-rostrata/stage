@@ -167,6 +167,7 @@ Whole files are staged with `git add -- <path>` and unstaged with `git restore -
   - If the tree is dirty, it asks first, because the changes come along.
   - git refuses a switch that would overwrite uncommitted work, and its message goes in the status bar.
 - **Startup:** a clean working tree (nothing staged, modified, untracked or unmerged) opens on the branch list, since there is nothing to stage. Otherwise stage opens on the three panes, focused on Status.
+- **After a commit:** if it leaves the tree clean, stage moves to the branch list, for the same reason. git's `[branch abc1234] Summary` line stays in the status bar.
 
 **Destructive actions ask first.** Revert and delete each show a one-line `y/N` prompt naming what will be lost, as git-cola's dialogs do. Anything other than `y` cancels.
 

@@ -501,6 +501,10 @@ func (a *App) commit() {
 	}
 	a.info = commitLine(out.String())
 	a.reload()
+	// Committing the last change leaves nothing to stage, as at startup.
+	if a.clean {
+		a.showBranches()
+	}
 }
 
 // suspended hands the terminal over while run runs, then takes it back and

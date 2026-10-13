@@ -200,3 +200,7 @@ The human asked for a view of the most recent branches: whether each is behind i
 - **Ctrl+T toggles the views,** from anywhere. It was free in every pane, VTE sends it, and Emacs's transpose-chars isn't implemented.
 - **Clean means nothing staged, modified, untracked or unmerged.** Untracked files count, because they're something to stage.
 - **A refactor:** `gitPath` replaces the separate draft and audit-trail path lookups, now that `FETCH_HEAD` needs one too.
+
+## 2026-10-13 — A commit that leaves the tree clean moves to the branch list
+
+The human asked for this. It's the startup rule applied again: with nothing left to stage, the next thing is usually another branch. Only a successful commit does it, and only when nothing staged, modified, untracked or unmerged remains, so a partial commit stays on the three panes. Reverting or deleting the last change doesn't move to the list; the human asked only about commits.

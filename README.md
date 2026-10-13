@@ -55,7 +55,7 @@ to another terminal window and back refreshes everything.
 The branch list shows your local branches, the most recently committed to first: `*` on the
 current one, `↓N` if it's behind its upstream as of your last `git fetch` (stage never fetches),
 and the last commit's local time and summary. stage opens on it when there's nothing to commit,
-and on the three panes otherwise.
+and on the three panes otherwise. A commit that leaves nothing else to commit moves to it too.
 
 The message is saved in `.git/STAGE_MSG` as you type, so quitting doesn't lose it. A commit
 runs `git commit` on the normal screen, so hooks and signing prompts work as usual.

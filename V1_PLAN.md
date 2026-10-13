@@ -248,3 +248,4 @@ What was built:
   - Enter switches and returns to the panes, and Ctrl+O shows the `switch` entry;
   - a dirty tree asks first, and `n` cancels;
   - the colours on the cursor row, the current branch and `↓1`.
+- Later the same day: a commit that leaves the tree clean moves to the branch list (`commit` in `ui/app.go`). Checked in tmux: a partial commit stays on the panes; committing the rest moves to the list with git's summary line in the bar.
