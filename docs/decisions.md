@@ -135,3 +135,23 @@ The brief's selection keys were Ctrl+Space, Shift+J/K and Ctrl+G. Shift+Up/Down 
 ## 2026-10-12 — git apply --whitespace=nowarn
 
 A partial patch is the human's own lines, so stage applies it as written. Without this flag, an `apply.whitespace=fix` or `=error` setting would rewrite or refuse lines with trailing whitespace that `git add` would have staged unchanged.
+
+## 2026-10-12 — Commit from the draft file, not stdin
+
+The brief said `git commit -F -`. With the message on stdin, git's stdin is a pipe, so a hook that reads its input can't reach the terminal (pinentry opens `/dev/tty` itself, but hooks don't always). stage already keeps the message in `.git/STAGE_MSG`, so it runs `git commit --file <that path>` and leaves stdin on the terminal. git's default cleanup for a message that isn't edited is `whitespace`: it trims surrounding blank lines and trailing spaces, and keeps `#` lines.
+
+## 2026-10-12 — After a commit, wait only on failure
+
+The brief said stage would always show git's output and wait for a key. Waiting after every successful commit is an extra keypress for nothing. git's output is copied to the terminal and also kept by stage. On success, stage returns straight away and shows the `[main abc1234] Summary` line in the status bar. On failure it waits for Enter on the normal screen, where the hook's or git's output is, and keeps the message.
+
+## 2026-10-12 — Ctrl+C during a commit stops git, not stage
+
+While suspended, Ctrl+C sends SIGINT to the whole foreground process group, stage included. SIGINT is therefore kept on its own channel and forgotten on resume: the commit is aborted, and stage comes back with the message kept. A SIGINT from outside while stage is running normally still quits cleanly, as SIGTERM and SIGHUP do.
+
+## 2026-10-12 — Message editor details
+
+- **Ctrl+W deletes the word before the cursor, as in readline and the shell.** The editor has no mark, so Emacs's kill-region would have nothing to kill. Ctrl+Backspace does the same, if the terminal sends it as `^H`.
+- **Ctrl+C Ctrl+K needs no confirmation.** The cleared text becomes the editor's last kill, so Ctrl+Y in the empty summary restores it.
+- **Commit works from any pane:** stage something in Status or Diff, then Ctrl+C Ctrl+C. Committing doesn't require going back to the message.
+- **A restored draft puts the cursor at the end of the summary.**
+- **The draft is saved once per batch of keys.** Its path is looked up once. Saving per key, with a lookup each time, delayed a 100-character paste by about half a second.

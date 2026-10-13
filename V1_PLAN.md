@@ -134,16 +134,44 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
 - The exact patch text, for both directions.
 - In tmux: `s` on a hunk; a two-line selection with Ctrl+Space and Shift+J; unstaging a selected line from the staged diff; and a revert from the Diff pane, cancelled with Esc and then confirmed. Each was checked against `git diff --cached` and `git diff`.
 
-## Phase 5 — commit
+## Phase 5 — commit — DONE
 
-- The Commit pane's summary and description editor with the Emacs keys, paste, and line wrapping.
-- The draft saved to `.git/STAGE_MSG` and restored at startup.
-- Ctrl+C Ctrl+C commits through `git commit -F -` with the TUI suspended, shows git's output, keeps the message on failure, and clears it and the draft on success. Ctrl+C Ctrl+K clears the message.
+- `ui/editor.go`:
+  - the summary and a multi-line description;
+  - Emacs movement, kill and yank;
+  - Enter in the summary moves to the description;
+  - a pasted message splits into its summary and description;
+  - the cursor starts at the end of the summary.
+- `ui/commit_pane.go`: git-cola's placeholders, the summary scrolling sideways, a rule, and the description wrapped and scrolled to keep the cursor in view. The terminal cursor shows there while the pane is focused.
+- `git/commit.go`:
+  - the draft in `.git/STAGE_MSG`, found with `git rev-parse --git-path` once and cached;
+  - `CommitDraft` runs `git commit --file <draft>` on the terminal.
+- `ui/app.go`:
+  - The draft is saved once per batch of keys.
+  - Ctrl+C Ctrl+C commits from any pane.
+  - Ctrl+C Ctrl+K clears the message, and Ctrl+Y brings it back.
+  - The status is reloaded before committing. An empty summary or nothing staged is caught before the terminal is handed over.
+  - On a failed commit, stage waits for Enter.
+- `term/`: `Input`, `WaitForEnter`, and SIGINT kept apart from quitting, so Ctrl+C at a hook's prompt only stops git.
 
-**Done when:**
-- editor tests pass;
-- a commit made from stage runs a `commit-msg` hook that prompts on the terminal;
-- `git log -1` shows the exact message typed.
+**Checked:**
+- Editor tests:
+  - a message's round trip;
+  - typing;
+  - Enter in the summary;
+  - joining lines;
+  - kill and yank;
+  - word movement and word kills;
+  - pasting part of a message, and a whole message;
+  - moving across lines.
+- Draft and commit tests against a real repository, including a commit with nothing staged.
+- In tmux:
+  - a typed message is saved and comes back after quitting;
+  - a 100-character description appears within 0.15 s (it first took about 0.5 s, because every key started a `git rev-parse`);
+  - Ctrl+C Ctrl+C commits, and `git log -1` shows the exact message;
+  - a rejecting `commit-msg` hook shows its output, waits for Enter and keeps the message;
+  - a hook that prompts on `/dev/tty` gets its answer;
+  - Ctrl+C at that prompt aborts the commit and stage carries on.
 
 ## Phase 6 — polish and install
 

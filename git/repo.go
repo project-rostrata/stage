@@ -13,7 +13,8 @@ import (
 
 // Repo is a git working tree. Every command runs at its top level.
 type Repo struct {
-	root string
+	root  string
+	draft string // the draft message file's path, once looked up
 }
 
 // Open finds the working tree that contains dir.

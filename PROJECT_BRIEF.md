@@ -155,9 +155,11 @@ Whole files are staged with `git add -- <path>` and unstaged with `git restore -
 **The commit message is written inline, in the Commit pane.** It has two fields, like git-cola's: a one-line summary and a multi-line extended description. On commit they are joined as `summary`, a blank line, then the description.
 - An empty summary refuses to commit.
 - An unsent message is saved to `.git/STAGE_MSG` as it's typed, restored on the next start, and deleted after a successful commit (git-cola keeps `GIT_COLA_MSG` the same way).
-- Commit runs `git commit -F -` with the message on stdin, **with the TUI suspended**: cooked mode and the normal screen, so hooks, GPG/SSH signing and pinentry can use the terminal.
-  - stage then shows git's output and waits for a key before redrawing.
-  - A failed commit keeps the message.
+- Commit runs `git commit --file .git/STAGE_MSG` **with the TUI suspended**: cooked mode and the normal screen, so hooks, GPG/SSH signing and pinentry can use the terminal. Committing from the draft file rather than stdin leaves stdin connected to the terminal for them.
+  - Ctrl+C Ctrl+C commits from any pane.
+  - On success, stage returns straight away and shows git's `[branch abc1234] Summary` line in the status bar.
+  - On failure, it waits for Enter so git's output can be read, then keeps the message.
+  - Ctrl+C at a hook's prompt aborts the commit, not stage.
 
 **Keys: git-cola's bindings for actions, Emacs for editing and moving.** These come from git-cola's `cola/hotkeys.py`, adjusted for what a terminal can send. Keys are scoped by the focused pane.
 

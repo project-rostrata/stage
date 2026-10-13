@@ -144,3 +144,48 @@ func TestActionsRefuseTheWrongSection(t *testing.T) {
 		t.Error("deleting a tracked file should be refused")
 	}
 }
+
+func TestDraftAndCommit(t *testing.T) {
+	r, dir := repo(t)
+	if msg, err := r.LoadDraft(); err != nil || msg != "" {
+		t.Fatalf("no draft yet: %q, %v", msg, err)
+	}
+	msg := "Change a\n\nWith a body.\n"
+	if err := r.SaveDraft(msg); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := r.LoadDraft(); err != nil || got != msg {
+		t.Fatalf("LoadDraft = %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "STAGE_MSG")); err != nil {
+		t.Errorf("draft should be in .git: %v", err)
+	}
+
+	write(t, dir, "a.txt", "changed\n")
+	run(t, dir, "add", "a.txt")
+	var out strings.Builder
+	if err := r.CommitDraft(strings.NewReader(""), &out, &out); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if got := run(t, dir, "log", "-1", "--format=%B"); got != msg+"\n" {
+		t.Errorf("commit message %q, want %q", got, msg)
+	}
+
+	if err := r.SaveDraft(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".git", "STAGE_MSG")); !os.IsNotExist(err) {
+		t.Errorf("an empty draft should remove the file: %v", err)
+	}
+}
+
+func TestCommitWithNothingStagedFails(t *testing.T) {
+	r, _ := repo(t)
+	if err := r.SaveDraft("Nothing\n"); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := r.CommitDraft(strings.NewReader(""), &out, &out); err == nil {
+		t.Errorf("commit with nothing staged should fail: %s", out.String())
+	}
+}

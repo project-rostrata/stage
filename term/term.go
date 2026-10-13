@@ -3,6 +3,7 @@
 package term
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -38,6 +39,7 @@ type Terminal struct {
 	active bool
 	winch  chan os.Signal
 	quit   chan os.Signal
+	intr   chan os.Signal
 }
 
 // Open checks that stdin and stdout are a terminal and remembers its current
@@ -58,11 +60,16 @@ func Open() (*Terminal, error) {
 		saved: saved,
 		winch: make(chan os.Signal, 1),
 		quit:  make(chan os.Signal, 1),
+		intr:  make(chan os.Signal, 1),
 	}
 	signal.Notify(t.winch, syscall.SIGWINCH)
 	// Raw mode turns off the keys that send these, so they only come from outside
 	// (kill, a closed window). stage still has to restore the terminal for them.
-	signal.Notify(t.quit, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
+	signal.Notify(t.quit, syscall.SIGTERM, syscall.SIGHUP)
+	// SIGINT is kept apart: while suspended, Ctrl+C at a hook's prompt sends it
+	// to stage as well as to git. That aborts the commit, not stage, so Resume
+	// forgets it.
+	signal.Notify(t.intr, syscall.SIGINT)
 	return t, nil
 }
 
@@ -110,7 +117,25 @@ func (t *Terminal) Stop() error {
 func (t *Terminal) Suspend() error { return t.Stop() }
 
 // Resume takes the terminal back after Suspend. The caller must redraw everything.
-func (t *Terminal) Resume() error { return t.Start() }
+func (t *Terminal) Resume() error {
+	select {
+	case <-t.intr:
+	default:
+	}
+	return t.Start()
+}
+
+// Input is the terminal's input, for a program run while suspended.
+func (t *Terminal) Input() *os.File { return os.Stdin }
+
+// WaitForEnter prints a prompt and waits for a line, while suspended.
+func (t *Terminal) WaitForEnter(prompt string) error {
+	if _, err := t.out.WriteString(prompt); err != nil {
+		return err
+	}
+	_, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	return err
+}
 
 // Size returns the terminal's width and height in cells.
 func (t *Terminal) Size() (int, int, error) {
@@ -152,6 +177,8 @@ func (t *Terminal) Resized() bool {
 func (t *Terminal) QuitRequested() bool {
 	select {
 	case <-t.quit:
+		return true
+	case <-t.intr:
 		return true
 	default:
 		return false

@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"strings"
 
 	"stage/git"
@@ -32,23 +34,35 @@ type App struct {
 	counts string
 	status statusPane
 	diff   diffPane
+	msg    editor
+	staged int    // how many paths are staged, so an empty commit is caught before suspending
 	errMsg string // the last error, shown in the status bar until the next key
 	info   string // the result of the last action, shown the same way
 	ask    *question
 	// pendingG is set after a lone g, waiting for the second g of gg.
 	pendingG bool
-	quit     bool
+	// pendingC is set after Ctrl+C, waiting for the second key of the chord.
+	pendingC bool
+	// msgChanged is set when the message was edited, so the draft is saved
+	// once per batch of keys rather than once per key.
+	msgChanged bool
+	quit       bool
 }
 
 // New returns the app, focused on Status as git-cola starts.
 func New(t *term.Terminal, s *screen.Screen, r *git.Repo) *App {
-	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus, diff: diffPane{mark: -1}}
+	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus, diff: diffPane{mark: -1}, msg: newEditor("")}
 }
 
 // Run draws and handles keys until the human quits or a signal asks stage to exit.
 func (a *App) Run() error {
 	if err := a.resize(); err != nil {
 		return err
+	}
+	if draft, err := a.repo.LoadDraft(); err != nil {
+		a.errMsg = err.Error()
+	} else {
+		a.msg = newEditor(draft)
 	}
 	a.reload()
 	buf := make([]byte, 4096)
@@ -65,8 +79,8 @@ func (a *App) Run() error {
 			dirty = true
 		}
 		if dirty {
-			a.draw(a.scr.Frame())
-			if err := a.scr.Flush(screen.Cursor{}); err != nil {
+			cur := a.draw(a.scr.Frame())
+			if err := a.scr.Flush(cur); err != nil {
 				return err
 			}
 			dirty = false
@@ -87,6 +101,12 @@ func (a *App) Run() error {
 		for _, k := range keys {
 			a.handle(k)
 			dirty = true
+		}
+		if a.msgChanged {
+			a.msgChanged = false
+			if err := a.repo.SaveDraft(a.msg.message()); err != nil {
+				a.errMsg = err.Error()
+			}
 		}
 	}
 	return nil
@@ -112,6 +132,7 @@ func (a *App) reload() {
 	}
 	a.branch = st.Branch
 	a.counts = counts(st)
+	a.staged = len(st.Staged)
 	a.status.setStatus(st)
 	a.loadDiff()
 }
@@ -172,6 +193,25 @@ func (a *App) handle(k input.Key) {
 		}
 		return
 	}
+	if a.pendingC {
+		a.pendingC = false
+		switch {
+		case k.Is('c', input.Ctrl):
+			a.commit()
+		case k.Is('k', input.Ctrl):
+			a.clearMessage()
+		default:
+			a.info = "Ctrl+C cancelled"
+		}
+		return
+	}
+	if k.Is('c', input.Ctrl) {
+		a.pendingC = true
+		return
+	}
+	if a.focus == paneCommit && a.handleCommitKey(k) {
+		return
+	}
 	wasG := a.pendingG
 	a.pendingG = false
 	switch {
@@ -189,10 +229,6 @@ func (a *App) handle(k input.Key) {
 		a.focus = (a.focus + 2) % 3
 	case k.Is('r', input.Ctrl), k.IsCode(input.F5, 0):
 		a.reload()
-	case a.focus == paneCommit:
-		if k.IsCode(input.Esc, 0) {
-			a.focus = paneStatus
-		}
 	case a.focus == paneStatus && k.Is('s', input.Ctrl):
 		a.toggleStaged()
 	case a.focus == paneDiff && (k.Is('s', 0) || k.Is('s', input.Ctrl)):
@@ -225,6 +261,117 @@ func (a *App) handle(k input.Key) {
 			a.diff.moveHunk(-1)
 		}
 	}
+}
+
+// handleCommitKey gives a key to the message editor, except for the keys that
+// work in every pane. Ctrl+K is the editor's kill-line here, not "focus
+// Status"; Tab or Esc leave the editor.
+func (a *App) handleCommitKey(k input.Key) bool {
+	switch {
+	case k.IsCode(input.Esc, 0):
+		a.focus = paneStatus
+		return true
+	case k.Is('q', input.Ctrl), k.Is('j', input.Ctrl), k.Is('l', input.Ctrl), k.Is('r', input.Ctrl),
+		k.IsCode(input.F5, 0), k.IsCode(input.Tab, 0), k.IsCode(input.BackTab, 0):
+		return false
+	}
+	if _, changed := a.msg.handle(k); changed {
+		a.msgChanged = true
+	}
+	return true
+}
+
+// clearMessage empties the message. The old text is kept as the editor's last
+// kill, so Ctrl+Y in the summary brings it back.
+func (a *App) clearMessage() {
+	old := strings.TrimRight(a.msg.message(), "\n")
+	a.msg = newEditor("")
+	a.msg.killed = old
+	if err := a.repo.SaveDraft(""); err != nil {
+		a.errMsg = err.Error()
+		return
+	}
+	if old != "" {
+		a.info = "Cleared the message; Ctrl+Y in the summary brings it back"
+	}
+}
+
+// commit runs git commit with the TUI suspended, so hooks, signing and
+// pinentry can use the terminal. git's output stays on the normal screen.
+// On success the message is cleared and git's summary line goes in the
+// status bar; on failure stage waits for Enter so the output can be read,
+// and the message is kept.
+func (a *App) commit() {
+	a.reload() // the staged count must be current, not as of the last refresh
+	switch {
+	case strings.TrimSpace(a.msg.summary()) == "":
+		a.errMsg = "Write a commit summary first"
+		a.focus = paneCommit
+		return
+	case a.staged == 0:
+		a.errMsg = "Nothing is staged"
+		return
+	}
+	if err := a.repo.SaveDraft(a.msg.message()); err != nil {
+		a.errMsg = err.Error()
+		return
+	}
+	var out bytes.Buffer
+	err := a.suspended(func() error {
+		fmt.Fprintln(a.term, "stage: git commit")
+		w := io.MultiWriter(a.term, &out)
+		err := a.repo.CommitDraft(a.term.Input(), w, w)
+		if err != nil {
+			a.term.WaitForEnter("\nThe commit failed; stage kept your message. Press Enter to go back. ")
+		}
+		return err
+	})
+	if err != nil {
+		a.errMsg = lastLine(out.String(), err.Error())
+		a.reload()
+		return
+	}
+	a.msg = newEditor("")
+	if err := a.repo.SaveDraft(""); err != nil {
+		a.errMsg = err.Error()
+	}
+	a.info = commitLine(out.String())
+	a.reload()
+}
+
+// suspended hands the terminal over while run runs, then takes it back and
+// redraws everything.
+func (a *App) suspended(run func() error) error {
+	if err := a.term.Suspend(); err != nil {
+		return err
+	}
+	runErr := run()
+	if err := a.term.Resume(); err != nil {
+		return err
+	}
+	a.scr.Invalidate()
+	if err := a.resize(); err != nil {
+		return err
+	}
+	return runErr
+}
+
+// commitLine picks git commit's "[branch abc1234] Summary" line out of its output.
+func commitLine(out string) string {
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "[") {
+			return l
+		}
+	}
+	return "Committed"
+}
+
+func lastLine(out, fallback string) string {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if l := strings.TrimSpace(lines[len(lines)-1]); l != "" {
+		return l
+	}
+	return fallback
 }
 
 // do runs an action that changes the repository, shows its result or error,
@@ -400,19 +547,23 @@ func (a *App) moveFocused(delta int) {
 	}
 }
 
-func (a *App) draw(g *screen.Grid) {
+// draw draws a frame and returns where the terminal cursor goes: in the
+// message editor when Commit is focused, and hidden otherwise.
+func (a *App) draw(g *screen.Grid) screen.Cursor {
 	l := a.lay
 	if l.tooSmall {
 		w, _ := g.Size()
 		g.Put(0, l.bar.y, fmt.Sprintf("stage needs at least %dx%d", minWidth, minHeight), a.pal.statusBar, w)
-		return
+		return screen.Cursor{}
 	}
 	drawBox(g, l.commit, "Commit", a.focus == paneCommit, a.pal)
+	cx, cy := a.msg.draw(g, l.commit, a.focus == paneCommit, a.pal)
 	drawBox(g, l.status, "Status", a.focus == paneStatus, a.pal)
 	a.status.draw(g, l.status, a.focus == paneStatus, a.pal)
 	drawBox(g, l.diff, a.diff.title(), a.focus == paneDiff, a.pal)
 	a.diff.draw(g, l.diff, a.focus == paneDiff, a.pal)
 	a.drawBar(g, l.bar)
+	return screen.Cursor{X: cx, Y: cy, Visible: a.focus == paneCommit && a.ask == nil}
 }
 
 // drawBar draws the status bar. A question, an error or the result of the
@@ -422,6 +573,9 @@ func (a *App) drawBar(g *screen.Grid, r rect) {
 	switch {
 	case a.ask != nil:
 		g.Put(r.x+1, r.y, a.ask.text, a.pal.errorText, r.w-2)
+		return
+	case a.pendingC:
+		g.Put(r.x+1, r.y, "Ctrl+C-  then Ctrl+C commit · Ctrl+K clear the message", a.pal.statusBar, r.w-2)
 		return
 	case a.errMsg != "":
 		g.Put(r.x+1, r.y, strings.ReplaceAll(a.errMsg, "\n", " "), a.pal.errorText, r.w-2)
@@ -452,5 +606,5 @@ func (a *App) hint() string {
 		}
 		return "s stage · Ctrl+U revert · Ctrl+Space mark · n/p hunk · Ctrl+Q quit"
 	}
-	return "Tab pane · Ctrl+Q quit"
+	return "Ctrl+C Ctrl+C commit · Esc leave · Ctrl+Q quit"
 }
