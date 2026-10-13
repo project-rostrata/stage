@@ -172,7 +172,7 @@ Whole files are staged with `git add -- <path>` and unstaged with `git restore -
 | Move | `j`/`k`, Ctrl+N/Ctrl+P, arrows | |
 | Page | `d`/`u`, Ctrl+V/Alt+V, PgDn/PgUp | |
 | Top / bottom | `gg`/`G`, Alt+`<`/Alt+`>` | |
-| Select diff lines | Ctrl+Space sets the mark, then move; Shift+J/Shift+K extend | Ctrl+G clears the mark |
+| Select diff lines | Ctrl+Space sets the mark, then move; Shift+J/Shift+K or Shift+arrows extend | Ctrl+G or Esc clears the mark |
 | Next / previous hunk | `n` / `p` | Emacs-style, alongside Ctrl+N/Ctrl+P for lines |
 | Refresh | Ctrl+R, F5, and automatically on focus-in | |
 | Quit | Ctrl+Q | |

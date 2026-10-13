@@ -102,18 +102,37 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
   - Ctrl+S on a staged rename unstages both paths.
   - A stale `index.lock` shows git's own error in the bar.
 
-## Phase 4 — hunks and lines
+## Phase 4 — hunks and lines — DONE
 
-- `patch/`: build the forward patch (stage) and the reverse form (unstage, revert) from a hunk and a set of selected lines (brief §4).
+- `patch/`: `Build` makes a Forward patch (stage) or a Reverse one (unstage, revert) from a selection that may span hunks.
+  - It recomputes the hunk starts, so a hunk that was skipped or only partly included before doesn't throw the next one off.
+  - It keeps a "no newline" marker only with the line it belongs to.
+  - Its header always names the one new path. A rename is never undone by a line patch. A file's creation or deletion is kept only when every change is included.
+- `git/`: `ApplyToIndex` (`git apply --cached [-R] --recount --whitespace=nowarn`) and `RevertPatch` (`git apply -R` on the working tree).
 - `ui/`:
-  - the mark and selection in the Diff pane;
-  - `s`/Ctrl+S and Ctrl+U on a selection or on the hunk under the cursor;
-  - hunk navigation (already done in phase 2);
-  - the cursor stays near the same place after the diff reloads.
+  - Ctrl+Space sets the mark, and the selection runs from the mark to the cursor.
+  - Shift+J/K and Shift+arrows extend the selection.
+  - Ctrl+G or Esc clears it.
+  - Selected change lines get the brighter backgrounds and a `▌` in the gutter.
+  - `s`/Ctrl+S stages the selection, or unstages it from a staged diff. With no mark, they act on the hunk under the cursor. Untracked and binary files go whole.
+  - Ctrl+U asks, then reverts the selection or hunk from an unstaged diff.
+  - The diff's cursor stays put after the reload.
 
-**Done when** round-trip tests against real temporary repositories pass for:
-- stage, unstage and revert of single lines, mixed `+`/`-` selections, whole hunks, the first and last hunks, and a file without a trailing newline;
-- the same flows in a tmux session, checked against `git diff` and `git diff --cached`.
+**Checked:**
+- Round-trip tests through real `git apply`:
+  - one added line, and one removed line;
+  - a one-line replacement among unchanged lines;
+  - only the second hunk, and a selection across two hunks (with the rest staged afterwards and checked exactly);
+  - unstaging a line and a removal;
+  - reverting a line, and reverting without touching staged changes;
+  - files with no final newline, both changing and leaving the last line;
+  - part of a deletion, and all of one;
+  - part of a new file;
+  - a line of a renamed file, which stays renamed;
+  - paths with a space, Japanese characters, and a quote and backslash;
+  - nothing selected.
+- The exact patch text, for both directions.
+- In tmux: `s` on a hunk; a two-line selection with Ctrl+Space and Shift+J; unstaging a selected line from the staged diff; and a revert from the Diff pane, cancelled with Esc and then confirmed. Each was checked against `git diff --cached` and `git diff`.
 
 ## Phase 5 — commit
 

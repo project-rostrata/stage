@@ -53,3 +53,21 @@ func (r *Repo) hasCommits() bool {
 	_, err := r.read(nil, "rev-parse", "--verify", "--quiet", "HEAD")
 	return err == nil
 }
+
+// ApplyToIndex applies a patch to the index only, as a stage (reverse false)
+// or an unstage (reverse true). --recount lets git fix the hunks' line counts,
+// and --whitespace=nowarn stops an apply.whitespace setting from rewriting or
+// refusing the human's own lines.
+func (r *Repo) ApplyToIndex(patch string, reverse bool) error {
+	args := []string{"apply", "--cached", "--recount", "--whitespace=nowarn"}
+	if reverse {
+		args = append(args, "-R")
+	}
+	return r.write([]byte(patch), append(args, "-")...)
+}
+
+// RevertPatch un-applies a patch built from the unstaged diff, throwing those
+// changes away in the working tree. The index is left alone.
+func (r *Repo) RevertPatch(patch string) error {
+	return r.write([]byte(patch), "apply", "-R", "--recount", "--whitespace=nowarn", "-")
+}

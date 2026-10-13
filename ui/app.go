@@ -6,6 +6,7 @@ import (
 
 	"stage/git"
 	"stage/input"
+	"stage/patch"
 	"stage/screen"
 	"stage/term"
 )
@@ -41,7 +42,7 @@ type App struct {
 
 // New returns the app, focused on Status as git-cola starts.
 func New(t *term.Terminal, s *screen.Screen, r *git.Repo) *App {
-	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus}
+	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus, diff: diffPane{mark: -1}}
 }
 
 // Run draws and handles keys until the human quits or a signal asks stage to exit.
@@ -194,6 +195,18 @@ func (a *App) handle(k input.Key) {
 		}
 	case a.focus == paneStatus && k.Is('s', input.Ctrl):
 		a.toggleStaged()
+	case a.focus == paneDiff && (k.Is('s', 0) || k.Is('s', input.Ctrl)):
+		a.stageSelection()
+	case a.focus == paneDiff && k.Is('u', input.Ctrl):
+		a.askRevertSelection()
+	case a.focus == paneDiff && k.Is(' ', input.Ctrl):
+		a.diff.setMark()
+	case a.focus == paneDiff && (k.Is('g', input.Ctrl) || k.IsCode(input.Esc, 0)):
+		a.diff.mark = -1
+	case a.focus == paneDiff && (k.Is('J', 0) || k.IsCode(input.Down, input.Shift)):
+		a.diff.extend(1)
+	case a.focus == paneDiff && (k.Is('K', 0) || k.IsCode(input.Up, input.Shift)):
+		a.diff.extend(-1)
 	case a.focus == paneStatus && k.Is('u', input.Ctrl):
 		a.askRevertFile()
 	case a.focus == paneStatus && k.IsCode(input.Delete, 0):
@@ -237,6 +250,75 @@ func (a *App) toggleStaged() {
 		return
 	}
 	a.do(func() (string, error) { return "Staged " + e.Path, a.repo.Stage(e) })
+}
+
+// stageSelection stages the Diff pane's selection, or unstages it when the
+// diff is the staged one. Untracked and binary files go whole.
+func (a *App) stageSelection() {
+	d := &a.diff
+	if !d.hasEntry {
+		return
+	}
+	e := d.entry
+	if e.Section == git.Untracked || d.diff.Binary {
+		a.toggleStaged()
+		return
+	}
+	if e.Section == git.Unmerged {
+		a.errMsg = "Resolve the conflict outside stage"
+		return
+	}
+	sel, what, ok := d.selection()
+	if !ok {
+		a.errMsg = "Move the cursor into a hunk, or select lines with Ctrl+Space"
+		return
+	}
+	mode, verb := patch.Forward, "Staged "
+	if e.Section == git.Staged {
+		mode, verb = patch.Reverse, "Unstaged "
+	}
+	p, err := patch.Build(d.diff, sel, mode)
+	if err != nil {
+		a.errMsg = err.Error()
+		return
+	}
+	a.do(func() (string, error) {
+		return verb + what + " of " + e.Path, a.repo.ApplyToIndex(p, mode == patch.Reverse)
+	})
+}
+
+// askRevertSelection asks before throwing away the selected unstaged lines.
+func (a *App) askRevertSelection() {
+	d := &a.diff
+	if !d.hasEntry {
+		return
+	}
+	e := d.entry
+	switch {
+	case e.Section == git.Untracked:
+		a.errMsg = "An untracked file has nothing to revert: Delete in Status removes it"
+		return
+	case e.Section != git.Modified:
+		a.errMsg = "Ctrl+U reverts unstaged changes: select the file under Modified"
+		return
+	case d.diff.Binary:
+		a.askRevertFile()
+		return
+	}
+	sel, what, ok := d.selection()
+	if !ok {
+		a.errMsg = "Move the cursor into a hunk, or select lines with Ctrl+Space"
+		return
+	}
+	p, err := patch.Build(d.diff, sel, patch.Reverse)
+	if err != nil {
+		a.errMsg = err.Error()
+		return
+	}
+	a.ask = &question{
+		text:   "Revert " + what + " of " + e.Path + "? It can't be recovered. [y/N]",
+		action: func() (string, error) { return "Reverted " + what + " of " + e.Path, a.repo.RevertPatch(p) },
+	}
 }
 
 func (a *App) askRevertFile() {
@@ -365,7 +447,10 @@ func (a *App) hint() string {
 	case paneStatus:
 		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+Q quit"
 	case paneDiff:
-		return "n/p hunk · Ctrl+Q quit"
+		if a.diff.entry.Section == git.Staged {
+			return "s unstage · Ctrl+Space mark · n/p hunk · Ctrl+Q quit"
+		}
+		return "s stage · Ctrl+U revert · Ctrl+Space mark · n/p hunk · Ctrl+Q quit"
 	}
 	return "Tab pane · Ctrl+Q quit"
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"stage/git"
+	"stage/patch"
 	"stage/screen"
 )
 
@@ -14,6 +15,7 @@ type diffLine struct {
 	text     string // tabs already expanded; for a hunk line, includes its +, - or space
 	old, new int    // line numbers, 0 for none
 	hunk     int    // index of the hunk it belongs to, -1 for header lines
+	line     int    // index in the hunk's Lines, -1 for the @@ line and header lines
 }
 
 type lineKind int
@@ -27,11 +29,14 @@ const (
 	kindNoEOL
 )
 
-// diffPane shows one path's diff, with a cursor line.
+// diffPane shows one path's diff, with a cursor line and, once a mark is set,
+// a selection running from the mark to the cursor.
 type diffPane struct {
 	entry    git.Entry
 	hasEntry bool
+	diff     git.FileDiff
 	lines    []diffLine
+	mark     int // -1 when no mark is set
 	numWidth int
 	cursor   int // index into lines
 	top      int // first visible line; it always starts at its first wrapped row
@@ -46,20 +51,20 @@ var headerShown = []string{"new file mode", "deleted file mode", "old mode", "ne
 // setDiff shows d for e. Reloading the same entry keeps the cursor where it was.
 func (p *diffPane) setDiff(e git.Entry, d git.FileDiff) {
 	same := p.hasEntry && p.entry.Section == e.Section && p.entry.Path == e.Path
-	p.entry, p.hasEntry, p.message = e, true, ""
+	p.entry, p.hasEntry, p.diff, p.message, p.mark = e, true, d, "", -1
 	p.lines = p.lines[:0]
 	maxNo := 0
 	for _, h := range d.Header {
 		for _, prefix := range headerShown {
 			if strings.HasPrefix(h, prefix) {
-				p.lines = append(p.lines, diffLine{kind: kindInfo, text: h, hunk: -1})
+				p.lines = append(p.lines, diffLine{kind: kindInfo, text: h, hunk: -1, line: -1})
 			}
 		}
 	}
 	for i, h := range d.Hunks {
-		p.lines = append(p.lines, diffLine{kind: kindHunk, text: expandTabs(h.Header), hunk: i})
-		for _, l := range h.Lines {
-			dl := diffLine{text: string(l.Kind) + expandTabs(l.Text), old: l.Old, new: l.New, hunk: i}
+		p.lines = append(p.lines, diffLine{kind: kindHunk, text: expandTabs(h.Header), hunk: i, line: -1})
+		for li, l := range h.Lines {
+			dl := diffLine{text: string(l.Kind) + expandTabs(l.Text), old: l.Old, new: l.New, hunk: i, line: li}
 			switch l.Kind {
 			case git.Added:
 				dl.kind = kindAdded
@@ -89,7 +94,58 @@ func (p *diffPane) setDiff(e git.Entry, d git.FileDiff) {
 
 // clear shows a message instead of a diff.
 func (p *diffPane) clear(message string) {
-	p.hasEntry, p.lines, p.cursor, p.top, p.message = false, p.lines[:0], 0, 0, message
+	p.hasEntry, p.diff, p.lines, p.cursor, p.top, p.message, p.mark = false, git.FileDiff{}, p.lines[:0], 0, 0, message, -1
+}
+
+// setMark starts a selection at the cursor.
+func (p *diffPane) setMark() {
+	if len(p.lines) > 0 {
+		p.mark = p.cursor
+	}
+}
+
+// extend moves the cursor by delta, starting a selection first if there isn't one.
+func (p *diffPane) extend(delta int) {
+	if p.mark < 0 {
+		p.setMark()
+	}
+	p.move(delta)
+}
+
+func (p *diffPane) selected(i int) bool {
+	return p.mark >= 0 && i >= min(p.mark, p.cursor) && i <= max(p.mark, p.cursor)
+}
+
+// selection is what s and Ctrl+U act on: the lines from the mark to the
+// cursor, or with no mark, the whole hunk under the cursor. what describes
+// it for the status bar.
+func (p *diffPane) selection() (sel patch.Selection, what string, ok bool) {
+	sel = patch.Selection{}
+	if p.mark >= 0 {
+		n := 0
+		for i, l := range p.lines {
+			if p.selected(i) && l.line >= 0 && (l.kind == kindAdded || l.kind == kindRemoved) {
+				if sel[l.hunk] == nil {
+					sel[l.hunk] = map[int]bool{}
+				}
+				sel[l.hunk][l.line] = true
+				n++
+			}
+		}
+		if n == 1 {
+			return sel, "1 line", true
+		}
+		return sel, fmt.Sprintf("%d lines", n), true
+	}
+	if len(p.lines) == 0 || p.lines[p.cursor].hunk < 0 {
+		return nil, "", false
+	}
+	h := p.lines[p.cursor].hunk
+	sel[h] = map[int]bool{}
+	for i := range p.diff.Hunks[h].Lines {
+		sel[h][i] = true
+	}
+	return sel, "a hunk", true
 }
 
 func (p *diffPane) title() string {
@@ -138,7 +194,7 @@ func (p *diffPane) draw(g *screen.Grid, r rect, focused bool, pal palette) {
 	y := in.y
 	for i := p.top; i < len(p.lines) && y < in.y+in.h; i++ {
 		l := p.lines[i]
-		style := pal.lineStyle(l.kind)
+		style := pal.lineStyle(l.kind, p.selected(i))
 		for n, piece := range wrap(l.text, textWidth) {
 			if y >= in.y+in.h {
 				break
@@ -148,6 +204,9 @@ func (p *diffPane) draw(g *screen.Grid, r rect, focused bool, pal palette) {
 			}
 			if n == 0 {
 				p.drawGutter(g, in.x, y, l, i == p.cursor && focused, pal)
+			}
+			if p.selected(i) && !(n == 0 && i == p.cursor && focused) {
+				g.Put(in.x, y, "▌", pal.focused, 1)
 			}
 			g.Put(in.x+gutter, y, piece, style, textWidth)
 			y++

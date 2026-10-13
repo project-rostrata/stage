@@ -108,3 +108,30 @@ Delete runs `git clean --force -- <path>` rather than removing the file directly
 ## 2026-10-12 — After an action, the next file in the same section is selected
 
 Once a file is staged, unstaged, reverted or deleted, it leaves its section. Keeping the same position in the whole list made the selection jump: staging an untracked file selected a Modified file. stage keeps the same position within the file's old section instead, so the next file in that list is selected, as in git-cola, and Ctrl+S can be pressed repeatedly to stage files one after another. Only when that section is now empty does it fall back to the same position in the whole list.
+
+## 2026-10-12 — Partly staging a block puts the staged lines after it
+
+Within one block of removed lines followed by added lines, a removed line that isn't selected stays where it is, as context, ahead of the block's added lines. So staging only `+ONE` and `+TWO` from
+
+```
+-one
+-two
+-three
++ONE
++TWO
++THREE
+```
+
+leaves `one two three ONE TWO` in the index. git add -p's edit mode, git-gui and git-cola all build these patches the same way, and a selection in stage is a contiguous range, as in git-cola. The usual case, replacing one line in the middle of unchanged lines, comes out exactly right. `TestPartOfABlockGoesAfterItsRemainingLines` records the behaviour on purpose. Pairing the removed and added lines one-to-one was considered and left out: it guesses the human's intent, and would surprise anyone used to git-cola.
+
+## 2026-10-12 — A line patch never renames, creates or deletes, unless everything is included
+
+A line patch's header always names one path, the new one. Unstaging a line of a staged rename therefore changes that file's content in the index, and the rename stays (Ctrl+S in Status unstages the rename itself). "new file mode" and "deleted file mode" are kept only when every change in the file is included. Staging part of a deletion leaves a shorter file in the index rather than deleting it, and unstaging part of a new file leaves a shorter new file.
+
+## 2026-10-12 — Shift+arrows and Esc in the Diff pane
+
+The brief's selection keys were Ctrl+Space, Shift+J/K and Ctrl+G. Shift+Up/Down also extend the selection, and Esc also clears the mark, because both are what a terminal user reaches for first and neither key had another meaning in the Diff pane.
+
+## 2026-10-12 — git apply --whitespace=nowarn
+
+A partial patch is the human's own lines, so stage applies it as written. Without this flag, an `apply.whitespace=fix` or `=error` setting would rewrite or refuse lines with trailing whitespace that `git add` would have staged unchanged.

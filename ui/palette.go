@@ -56,8 +56,14 @@ func darkPalette() palette {
 	}
 }
 
-// lineStyle is how a diff line of the given kind is drawn.
-func (pal palette) lineStyle(k lineKind) screen.Style {
+// lineStyle is how a diff line of the given kind is drawn, and whether it's selected.
+func (pal palette) lineStyle(k lineKind, selected bool) screen.Style {
+	switch {
+	case k == kindAdded && selected:
+		return pal.addedSel
+	case k == kindRemoved && selected:
+		return pal.removedSel
+	}
 	switch k {
 	case kindAdded:
 		return pal.added
