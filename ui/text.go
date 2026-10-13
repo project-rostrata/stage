@@ -67,3 +67,21 @@ func shortenLeft(s string, width int) string {
 	}
 	return "…" + string(runes[i:])
 }
+
+// shortenRight fits s into width columns by replacing its end with "…".
+func shortenRight(s string, width int) string {
+	if screen.StringWidth(s) <= width {
+		return s
+	}
+	if width < 1 {
+		return ""
+	}
+	runes := []rune(s)
+	col := 1 // the ellipsis
+	i := 0
+	for i < len(runes) && col+screen.DrawnWidth(runes[i]) <= width {
+		col += screen.DrawnWidth(runes[i])
+		i++
+	}
+	return string(runes[:i]) + "…"
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"stage/git"
 	"stage/input"
@@ -22,24 +23,35 @@ const (
 	paneDiff
 )
 
+// view is what fills the body: the three panes, or the branch list.
+type view int
+
+const (
+	viewChanges view = iota
+	viewBranches
+)
+
 // App is stage's state and its single-threaded event loop.
 type App struct {
-	term   *term.Terminal
-	scr    *screen.Screen
-	repo   *git.Repo
-	pal    palette
-	lay    layout
-	focus  pane
-	branch string
-	counts string
-	status statusPane
-	diff   diffPane
-	msg    editor
-	audit  auditView
-	staged int    // how many paths are staged, so an empty commit is caught before suspending
-	errMsg string // the last error, shown in the status bar until the next key
-	info   string // the result of the last action, shown the same way
-	ask    *question
+	term     *term.Terminal
+	scr      *screen.Screen
+	repo     *git.Repo
+	pal      palette
+	lay      layout
+	view     view
+	focus    pane
+	branch   string
+	counts   string
+	status   statusPane
+	diff     diffPane
+	msg      editor
+	audit    auditView
+	branches branchView
+	staged   int    // how many paths are staged, so an empty commit is caught before suspending
+	clean    bool   // nothing staged, modified, untracked or unmerged
+	errMsg   string // the last error, shown in the status bar until the next key
+	info     string // the result of the last action, shown the same way
+	ask      *question
 	// pendingG is set after a lone g, waiting for the second g of gg.
 	pendingG bool
 	// pendingC is set after Ctrl+C, waiting for the second key of the chord.
@@ -52,7 +64,8 @@ type App struct {
 
 // New returns the app, focused on Status as git-cola starts.
 func New(t *term.Terminal, s *screen.Screen, r *git.Repo) *App {
-	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus, diff: diffPane{mark: -1}, msg: newEditor("")}
+	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus, diff: diffPane{mark: -1},
+		msg: newEditor(""), branches: branchView{loc: time.Local}}
 }
 
 // Run draws and handles keys until the human quits or a signal asks stage to exit.
@@ -66,6 +79,10 @@ func (a *App) Run() error {
 		a.msg = newEditor(draft)
 	}
 	a.reload()
+	// A clean tree has nothing to stage, so stage opens on the branches.
+	if a.clean {
+		a.showBranches()
+	}
 	buf := make([]byte, 4096)
 	var pending []byte
 	dirty := true
@@ -134,9 +151,13 @@ func (a *App) reload() {
 	if a.audit.open {
 		a.loadAudit()
 	}
+	if a.view == viewBranches {
+		a.loadBranches()
+	}
 	a.branch = st.Branch
 	a.counts = counts(st)
 	a.staged = len(st.Staged)
+	a.clean = len(st.Entries()) == 0
 	a.status.setStatus(st)
 	a.loadDiff()
 }
@@ -213,8 +234,21 @@ func (a *App) handle(k input.Key) {
 		a.pendingC = true
 		return
 	}
+	if k.Is('t', input.Ctrl) {
+		a.toggleView()
+		return
+	}
 	if k.Is('o', input.Ctrl) {
+		if a.view == viewBranches {
+			// From the branch list, Ctrl+O always shows the trail.
+			a.view = viewChanges
+			a.audit.open = false
+		}
 		a.toggleAudit()
+		return
+	}
+	if a.view == viewBranches {
+		a.handleBranchKey(k)
 		return
 	}
 	if a.audit.open && a.focus == paneDiff && a.handleAuditKey(k) {
@@ -272,6 +306,80 @@ func (a *App) handle(k input.Key) {
 			a.diff.moveHunk(-1)
 		}
 	}
+}
+
+// toggleView switches between the three panes and the branch list.
+func (a *App) toggleView() {
+	if a.view == viewBranches {
+		a.view = viewChanges
+		return
+	}
+	a.showBranches()
+}
+
+func (a *App) showBranches() {
+	a.view = viewBranches
+	a.loadBranches()
+}
+
+func (a *App) loadBranches() {
+	branches, err := a.repo.Branches()
+	if err != nil {
+		a.errMsg = err.Error()
+		return
+	}
+	fetched, err := a.repo.LastFetch()
+	if err != nil {
+		a.errMsg = err.Error()
+	}
+	a.branches.load(branches, fetched)
+}
+
+// handleBranchKey moves through the branch list and switches with Enter.
+// Ctrl+T, Ctrl+O and the Ctrl+C chord are handled before it.
+func (a *App) handleBranchKey(k input.Key) {
+	wasG := a.pendingG
+	a.pendingG = false
+	switch {
+	case k.Is('q', input.Ctrl):
+		a.quit = true
+	case k.Is('r', input.Ctrl), k.IsCode(input.F5, 0):
+		a.reload()
+	case k.IsCode(input.Enter, 0):
+		a.switchBranch()
+	case k.Is('g', 0) && !wasG:
+		a.pendingG = true
+	default:
+		if delta, ok := a.movement(k, wasG); ok {
+			a.branches.move(delta)
+		}
+	}
+}
+
+// switchBranch switches to the branch under the cursor, asking first when
+// uncommitted changes would come along. git refuses if they'd be overwritten.
+func (a *App) switchBranch() {
+	a.reload() // whether the tree is clean must be current, not as of the last refresh
+	b, ok := a.branches.selected()
+	if !ok {
+		return
+	}
+	if b.Current {
+		a.info = "Already on " + b.Name
+		return
+	}
+	run := func() (string, error) {
+		if err := a.repo.Switch(b.Name); err != nil {
+			return "", err
+		}
+		a.view = viewChanges
+		return "Switched to " + b.Name, nil
+	}
+	if a.clean {
+		a.do(run)
+		return
+	}
+	a.ask = &question{text: "Switch to " + b.Name + "? Your uncommitted changes come along (y/N)", action: run}
 }
 
 // handleCommitKey gives a key to the message editor, except for the keys that
@@ -584,6 +692,9 @@ func (a *App) movement(k input.Key, afterG bool) (int, bool) {
 }
 
 func (a *App) pageHeight() int {
+	if a.view == viewBranches {
+		return max(a.lay.whole.h-3, 1)
+	}
 	if a.focus == paneDiff {
 		return max(a.lay.diff.h-3, 1)
 	}
@@ -610,6 +721,12 @@ func (a *App) draw(g *screen.Grid) screen.Cursor {
 	if l.tooSmall {
 		w, _ := g.Size()
 		g.Put(0, l.bar.y, fmt.Sprintf("stage needs at least %dx%d", minWidth, minHeight), a.pal.statusBar, w)
+		return screen.Cursor{}
+	}
+	if a.view == viewBranches {
+		drawBox(g, l.whole, a.branches.title(), true, a.pal)
+		a.branches.draw(g, l.whole, a.pal)
+		a.drawBar(g, l.bar)
 		return screen.Cursor{}
 	}
 	drawBox(g, l.commit, "Commit", a.focus == paneCommit, a.pal)
@@ -658,17 +775,20 @@ func (a *App) drawBar(g *screen.Grid, r rect) {
 
 // hint lists the focused pane's main keys.
 func (a *App) hint() string {
+	if a.view == viewBranches {
+		return "Enter switch · Ctrl+T changes · Ctrl+Q quit"
+	}
 	switch a.focus {
 	case paneStatus:
-		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+Q quit"
+		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+T branches · Ctrl+Q quit"
 	case paneDiff:
 		if a.audit.open {
-			return "j/k scroll · Esc or Ctrl+O close · Ctrl+Q quit"
+			return "j/k scroll · Esc or Ctrl+O close · Ctrl+T branches · Ctrl+Q quit"
 		}
 		if a.diff.entry.Section == git.Staged {
-			return "s unstage · Ctrl+Space mark · n/p hunk · Ctrl+Q quit"
+			return "s unstage · Ctrl+Space mark · n/p hunk · Ctrl+T branches · Ctrl+Q quit"
 		}
-		return "s stage · Ctrl+U revert · Ctrl+Space mark · n/p hunk · Ctrl+Q quit"
+		return "s stage · Ctrl+U revert · Ctrl+Space mark · n/p hunk · Ctrl+T branches · Ctrl+Q quit"
 	}
-	return "Ctrl+C Ctrl+C commit · Esc leave · Ctrl+Q quit"
+	return "Ctrl+C Ctrl+C commit · Esc leave · Ctrl+T branches · Ctrl+Q quit"
 }

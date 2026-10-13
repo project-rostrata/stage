@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -15,28 +14,11 @@ import (
 // stage ran that changed the repository, one line each, next to git's own logs.
 const auditName = "stage.log"
 
-// auditPath asks git where the audit trail lives, once.
-func (r *Repo) auditPath() (string, error) {
-	if r.audit != "" {
-		return r.audit, nil
-	}
-	out, err := r.read(nil, "rev-parse", "--git-path", auditName)
-	if err != nil {
-		return "", err
-	}
-	p := strings.TrimRight(string(out), "\n")
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(r.root, p)
-	}
-	r.audit = p
-	return p, nil
-}
-
 // record appends a command to the audit trail: when it ran, whether it
 // succeeded, and the command line exactly as run, quoted so it can be pasted
 // into a shell. args excludes the leading "git".
 func (r *Repo) record(args []string, runErr error) error {
-	p, err := r.auditPath()
+	p, err := r.gitPath(auditName)
 	if err != nil {
 		return err
 	}
@@ -60,7 +42,7 @@ func (r *Repo) record(args []string, runErr error) error {
 // AuditTrail returns the last n lines of the audit trail, oldest first, and
 // the file's path. A repository stage has never changed has no trail yet.
 func (r *Repo) AuditTrail(n int) ([]string, string, error) {
-	p, err := r.auditPath()
+	p, err := r.gitPath(auditName)
 	if err != nil {
 		return nil, "", err
 	}

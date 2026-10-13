@@ -214,3 +214,37 @@ What was built:
 - The brief has a threat model (§4, "Security"), and AGENTS.md has a security review checklist.
 
 **Checked:** `git/hardening_test.go`, one test per attack, plus a patch round-trip with a path that looks like a patch header and a C1 control character in `TestPut`. Each test was run with its defence removed and failed. Without the plain-file check, stage committed the linked "private key" as the commit message.
+
+### Branch list — DONE
+
+At the human's request: a second view listing the local branches, with a key in the bottom bar to switch between it and the three panes, and stage opening on it when the tree is clean. The human chose:
+- "behind" as of the last fetch, so stage still never fetches;
+- Enter switches to the branch, asking first when the tree is dirty;
+- the most recently committed to first.
+
+What was built:
+- `git/branches.go`:
+  - `Branches` (one `for-each-ref`), `Switch` (`git switch -- <name>`, recorded in the trail) and `LastFetch` (`FETCH_HEAD`'s modification time).
+  - `gitPath` replaces the separate draft and audit-trail path lookups.
+- `ui/branch_view.go`: the list over the whole body. `ui/app.go`:
+  - Ctrl+T toggles the views;
+  - Enter switches;
+  - the startup rule;
+  - the hints.
+
+**Checked:**
+- Tests:
+  - parsing every upstream state;
+  - `Branches` against a real repository (the order, `↓1`, `gone`);
+  - switching, including git refusing to overwrite work, and the trail entry;
+  - a planted branch named `--detach` (the test fails without `--`);
+  - `LastFetch`;
+  - the cursor kept by name;
+  - row layout at a narrow width;
+  - `shortenRight`.
+- In tmux:
+  - a clean repository opens on the list, and a dirty one on the panes;
+  - Ctrl+T toggles both ways, from the Commit editor too;
+  - Enter switches and returns to the panes, and Ctrl+O shows the `switch` entry;
+  - a dirty tree asks first, and `n` cancels;
+  - the colours on the cursor row, the current branch and `↓1`.

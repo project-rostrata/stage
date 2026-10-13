@@ -23,6 +23,7 @@ type palette struct {
 	cursorLine screen.Style
 	statusBar  screen.Style
 	branch     screen.Style
+	behind     screen.Style // how far a branch is behind its upstream
 	errorText  screen.Style
 	hint       screen.Style
 }
@@ -33,7 +34,8 @@ func darkPalette() palette {
 	green := screen.Hex(0x93b558)
 	var code [4]screen.Style
 	code[git.Staged] = screen.Style{Fg: green, Bold: true}
-	code[git.Modified] = screen.Style{Fg: screen.Hex(0xe0b060), Bold: true}
+	amber := screen.Hex(0xe0b060)
+	code[git.Modified] = screen.Style{Fg: amber, Bold: true}
 	code[git.Untracked] = screen.Style{Fg: light, Bold: true}
 	code[git.Unmerged] = screen.Style{Fg: screen.Hex(0xf07070), Bold: true}
 	return palette{
@@ -51,6 +53,7 @@ func darkPalette() palette {
 		cursorLine: screen.Style{Bg: screen.Hex(0x3a3a3a)},
 		statusBar:  screen.Style{Fg: light},
 		branch:     screen.Style{Fg: green, Bold: true},
+		behind:     screen.Style{Fg: amber, Bold: true},
 		errorText:  screen.Style{Fg: screen.Hex(0xf07070), Bold: true},
 		hint:       screen.Style{Fg: grey},
 	}

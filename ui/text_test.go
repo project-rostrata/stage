@@ -71,3 +71,22 @@ func TestLayoutMatchesGitCola(t *testing.T) {
 		t.Errorf("40x10 should be too small")
 	}
 }
+
+func TestShortenRight(t *testing.T) {
+	tests := []struct {
+		in    string
+		width int
+		want  string
+	}{
+		{"short", 10, "short"},
+		{"exactly", 7, "exactly"},
+		{"abcdefgh", 5, "abcd…"},
+		{"中文字", 4, "中…"}, // a wide character that doesn't fit is left out whole
+		{"abc", 0, ""},
+	}
+	for _, tt := range tests {
+		if got := shortenRight(tt.in, tt.width); got != tt.want {
+			t.Errorf("shortenRight(%q, %d) = %q, want %q", tt.in, tt.width, got, tt.want)
+		}
+	}
+}

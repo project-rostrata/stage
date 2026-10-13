@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -15,8 +16,7 @@ import (
 // Repo is a git working tree. Every command runs at its top level.
 type Repo struct {
 	root  string
-	draft string // the draft message file's path, once looked up
-	audit string // the audit trail's path, once looked up
+	paths map[string]string // files in the git directory, by name, once looked up
 }
 
 // Open finds the working tree that contains dir.
@@ -32,7 +32,25 @@ func Open(dir string) (*Repo, error) {
 		}
 		return nil, fmt.Errorf("git rev-parse: %w", err)
 	}
-	return &Repo{root: strings.TrimRight(string(out), "\n")}, nil
+	return &Repo{root: strings.TrimRight(string(out), "\n"), paths: map[string]string{}}, nil
+}
+
+// gitPath asks git where a file in the git directory lives, once per name.
+// --git-path gets this right for linked worktrees and a relocated git directory.
+func (r *Repo) gitPath(name string) (string, error) {
+	if p, ok := r.paths[name]; ok {
+		return p, nil
+	}
+	out, err := r.read(nil, "rev-parse", "--git-path", name)
+	if err != nil {
+		return "", err
+	}
+	p := strings.TrimRight(string(out), "\n")
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(r.root, p)
+	}
+	r.paths[name] = p
+	return p, nil
 }
 
 // Root returns the working tree's top-level directory.

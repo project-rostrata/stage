@@ -185,3 +185,18 @@ The finding: a Go binary on Linux has no sandbox. stage runs as the human, so th
 Already in place: argument lists, never a shell; `--` before paths; `--literal-pathspecs`; `--no-ext-diff --no-textconv`; control characters drawn as `�`; Go's refusal to run `./git` through `.` in PATH; `GOTOOLCHAIN=local`; no third-party modules. Each now has a test named in the brief's threat model.
 
 The audit trail's lines grow by `-c core.fsmonitor=false`. They stay exactly what ran.
+
+## 2026-10-13 — A branch list, and switching branches
+
+The human asked for a view of the most recent branches: whether each is behind its remote, a shortened last commit message, and its local time. A key in the bottom bar switches between it and the three panes. stage opens on it when the tree is clean, and on the three panes when it's dirty. This reverses v1's "branch selection happens in the terminal" for switching only; creating and deleting branches stay out.
+
+- **Order: the latest commit, newest first.** One `for-each-ref --sort=-committerdate`, which matches the time column. The alternative, most recently checked out (from the HEAD reflog), was turned down.
+- **Behind dates from the last fetch.** Fetching would mean the network and credential helpers, which stage has never touched (the threat model's "Credentials"). The title shows `FETCH_HEAD`'s time so the staleness is visible. Only "behind" is shown, as asked; "ahead" isn't.
+- **Enter switches, with `git switch -- <name>`.**
+  - `switch` only takes branches, so a tag of the same name can't be picked.
+  - A branch named like an option can exist in a planted `.git`, and `for-each-ref` lists it, which was checked. `--` makes it only a name.
+  - With uncommitted changes, stage asks first, because they come along. git refuses a switch that would overwrite them.
+  - stage then returns to the three panes.
+- **Ctrl+T toggles the views,** from anywhere. It was free in every pane, VTE sends it, and Emacs's transpose-chars isn't implemented.
+- **Clean means nothing staged, modified, untracked or unmerged.** Untracked files count, because they're something to stage.
+- **A refactor:** `gitPath` replaces the separate draft and audit-trail path lookups, now that `FETCH_HEAD` needs one too.

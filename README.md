@@ -48,7 +48,14 @@ to another terminal window and back refreshes everything.
 | Clear the message | Ctrl+C Ctrl+K (Ctrl+Y in the summary brings it back) |
 | Refresh | Ctrl+R or F5 |
 | Show the git commands stage ran | Ctrl+O (Esc closes) |
+| Switch between the panes and the branch list | Ctrl+T, from anywhere |
+| Switch to a branch | Enter in the branch list (asks first if you have uncommitted changes) |
 | Quit | Ctrl+Q |
+
+The branch list shows your local branches, the most recently committed to first: `*` on the
+current one, `↓N` if it's behind its upstream as of your last `git fetch` (stage never fetches),
+and the last commit's local time and summary. stage opens on it when there's nothing to commit,
+and on the three panes otherwise.
 
 The message is saved in `.git/STAGE_MSG` as you type, so quitting doesn't lose it. A commit
 runs `git commit` on the normal screen, so hooks and signing prompts work as usual.

@@ -52,7 +52,7 @@ main -> ui -> (screen, input, patch, git)
 - Files stage keeps in `.git` (the draft and the audit trail) are opened with `openFile`, which never follows a symbolic link.
 - Every command that changes something goes through `Repo.write` (or `CommitDraft`), which appends it to the audit trail, `.git/stage.log`. Don't run a write command any other way. A command that worked but couldn't be logged is reported as an error.
 - Set `GIT_OPTIONAL_LOCKS=0` for read-only commands (`status`, `diff`), so a background refresh never contends with the human's own git commands in another terminal.
-- Read-only commands may run on every refresh. Write commands (`add`, `restore`, `apply`, `commit`, `rm`) run only from an explicit keypress, and a destructive one only after its `y/N` prompt.
+- Read-only commands may run on every refresh. Write commands (`add`, `restore`, `apply`, `commit`, `rm`, `clean`, `switch`) run only from an explicit keypress, and a destructive one only after its `y/N` prompt.
 
 ## Security review
 

@@ -16,10 +16,11 @@ const (
 
 // layout is where each pane goes, as in the human's git-cola window: Commit
 // above Status on the left, about a quarter of the width, and Diff on the
-// right. The bottom row is the status bar.
+// right. The bottom row is the status bar. The branch list takes the whole
+// body instead.
 type layout struct {
-	commit, status, diff, bar rect
-	tooSmall                  bool
+	commit, status, diff, whole, bar rect
+	tooSmall                         bool
 }
 
 func newLayout(w, h int) layout {
@@ -32,6 +33,7 @@ func newLayout(w, h int) layout {
 		commit: rect{0, 0, left, commitHeight},
 		status: rect{0, commitHeight, left, body - commitHeight},
 		diff:   rect{left, 0, w - left, body},
+		whole:  rect{0, 0, w, body},
 		bar:    rect{0, body, w, 1},
 	}
 }

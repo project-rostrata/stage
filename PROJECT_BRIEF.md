@@ -24,7 +24,7 @@ A full-screen terminal program for the one part of the git workflow the human st
 └──────────────────────┘└─────────────────────────────────────────────────┘
 ```
 
-It is the sixth sibling project in this workspace, and the first that isn't a web app. The family's ethos still applies in full: **only what is necessary.** A feature goes in because the human's workflow needs it, never because git-cola, tig, lazygit or magit has it. Branches, stashes, merges, rebases, pushes and pulls happen in the terminal with plain `git`, and stay there.
+It is the sixth sibling project in this workspace, and the first that isn't a web app. The family's ethos still applies in full: **only what is necessary.** A feature goes in because the human's workflow needs it, never because git-cola, tig, lazygit or magit has it. Creating branches, stashes, merges, rebases, pushes and pulls happen in the terminal with plain `git`, and stay there. Switching branches was added after v1, at the human's request (the branch list, below).
 
 The user is the human alone, on Ubuntu, in GNOME Terminal. There is no packaging for anyone else.
 
@@ -103,7 +103,7 @@ For three panes that is a few hundred lines. The human hasn't used Go before (`s
 - **Delete** an untracked file.
 - **Commit**, with the message written in the Commit pane.
 
-Branches, stash, merge, rebase, amend, push and pull are deliberately left to the terminal (section 6).
+After v1, stage also lists the local branches and switches between them (the branch list, below). Creating or deleting branches, stash, merge, rebase, amend, push and pull are deliberately left to the terminal (section 6).
 
 **Layout: the human's git-cola layout.**
 - The left column, about a quarter of the width, holds **Commit** at the top (a few rows) and **Status** below it.
@@ -154,11 +154,19 @@ Two cases support whole-file actions only:
 
 Whole files are staged with `git add -- <path>` and unstaged with `git restore --staged -- <path>`.
 
-**An audit trail of every git command that changes something.** stage is a thin layer over the ordinary git command line, so it records exactly what it ran. Each git command that changes the index, the working tree or history appends one line to `.git/stage.log`: the time, `ok` or `failed`, and the command line, quoted so it can be pasted into a shell. Those commands are `add`, `restore`, `rm --cached`, `clean`, `apply` and `commit`.
+**An audit trail of every git command that changes something.** stage is a thin layer over the ordinary git command line, so it records exactly what it ran. Each git command that changes the index, the working tree or history appends one line to `.git/stage.log`: the time, `ok` or `failed`, and the command line, quoted so it can be pasted into a shell. Those commands are `add`, `restore`, `rm --cached`, `clean`, `apply`, `commit` and `switch`.
 - Read-only commands (`status`, `diff`, `rev-parse`) aren't recorded. They run on every refresh and selection.
 - A partial patch's text isn't recorded either; the entry is the `git apply … -` command line.
 - **Ctrl+O** shows the end of the trail in place of the Diff pane, newest at the bottom and failures in red. Esc or Ctrl+O closes it.
 - The file is plain text, so `less` or `tail -f` work too.
+
+**The branch list.** A second view, added after v1, fills the body in place of the three panes. Ctrl+T switches between the two from anywhere, the Commit editor included.
+- **Rows:** the local branches, the most recently committed to first (`for-each-ref --sort=-committerdate`). Each row shows `*` on the current branch, the name, `↓N` when the branch is behind its upstream (or `gone` when the upstream was deleted), the last commit's local time and its summary, cut with `…` to fit.
+- **"Behind" dates from the last fetch.** stage never fetches, so it never touches the network or credentials. The title shows when `FETCH_HEAD` was last written, or "never fetched".
+- **Enter switches** to the branch under the cursor with `git switch -- <name>`, recorded in the audit trail, then returns to the three panes.
+  - If the tree is dirty, it asks first, because the changes come along.
+  - git refuses a switch that would overwrite uncommitted work, and its message goes in the status bar.
+- **Startup:** a clean working tree (nothing staged, modified, untracked or unmerged) opens on the branch list, since there is nothing to stage. Otherwise stage opens on the three panes, focused on Status.
 
 **Destructive actions ask first.** Revert and delete each show a one-line `y/N` prompt naming what will be lost, as git-cola's dialogs do. Anything other than `y` cancels.
 
@@ -188,6 +196,8 @@ Whole files are staged with `git add -- <path>` and unstaged with `git restore -
 | Next / previous hunk | `n` / `p` | Emacs-style, alongside Ctrl+N/Ctrl+P for lines |
 | Refresh | Ctrl+R, F5, and automatically on focus-in | |
 | Show or hide the audit trail | Ctrl+O | Shown in place of the Diff pane; Esc also closes it |
+| Switch between the three panes and the branch list | Ctrl+T | Works everywhere; Emacs's transpose-chars isn't implemented |
+| Switch to the branch under the cursor (branch list) | Enter | Asks y/N first when the tree is dirty |
 | Quit | Ctrl+Q | |
 
 The message editor takes the usual Emacs keys:
@@ -217,10 +227,12 @@ stage is an ordinary process: it runs as the human, with everything they can rea
 | `.git/STAGE_MSG` links to a private key, which would be loaded into the message and committed | The draft is opened with `O_NOFOLLOW`, and committing checks it's a plain file | `TestDraftIsNeverReadOrWrittenThroughALink` |
 | `.git/stage.log` links to `~/.bashrc` | The trail is opened with `O_NOFOLLOW` | `TestAuditTrailIsNeverWrittenThroughALink` |
 | A `git` executable in the repository, with `.` in PATH | Go refuses to run a program found through `.` | `TestAGitInTheRepositoryIsNotRun` |
-| Escape sequences in a file name, a diff or git's error text (writing the clipboard, retitling the window) | Everything is drawn through `screen/`, which draws C0 and C1 control characters as `�` | `TestPut` |
+| A branch named like an option (`--detach`), planted in `.git/refs/heads` | The name follows `--` in `git switch -- <name>` | `TestSwitchToABranchNamedLikeAnOption` |
+| Escape sequences in a file name, a branch name, a commit summary, a diff or git's error text (writing the clipboard, retitling the window) | Everything is drawn through `screen/`, which draws C0 and C1 control characters as `�` | `TestPut` |
 
 **Accepted:**
 - **Filters:** clean and smudge filters named in a repository's own `.git/config` still run on `status`, `diff`, `add` and `restore`. Turning them off would break git-lfs. git already refuses a repository owned by another user (`safe.directory`).
+- **Switching branches** runs the `post-checkout` hook and smudge filters, exactly as plain `git switch` does: the same trust as `git commit`.
 - **The suspended commit:** `git commit`'s own output is shown raw on the normal screen, just as it is when the human runs it.
 
 **Credentials:** stage never fetches or pushes, so git never asks a credential helper for anything. Signing goes through the human's own agent, as with plain git.
@@ -232,7 +244,7 @@ None at the start of v1. Raise anything that comes up here before building it.
 ## 6. Deliberately out of scope
 
 These were considered and left out of v1. Each could come back only if the human's workflow needs it.
-- Branches, checkout, stash, merge, rebase, cherry-pick, reset, amend, push, pull and fetch. These are done in the terminal.
+- Creating, renaming or deleting branches, stash, merge, rebase, cherry-pick, reset, amend, push, pull and fetch. These are done in the terminal. (Switching between local branches came in after v1.)
 - Log and history browsing, and blame.
 - Mouse support.
 - Search within a diff.

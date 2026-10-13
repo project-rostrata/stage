@@ -15,27 +15,9 @@ import (
 // message, the way git-cola keeps GIT_COLA_MSG.
 const draftName = "STAGE_MSG"
 
-// draftPath asks git where the draft lives, once. --git-path gets this right
-// for linked worktrees and a relocated git directory.
-func (r *Repo) draftPath() (string, error) {
-	if r.draft != "" {
-		return r.draft, nil
-	}
-	out, err := r.read(nil, "rev-parse", "--git-path", draftName)
-	if err != nil {
-		return "", err
-	}
-	p := strings.TrimRight(string(out), "\n")
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(r.root, p)
-	}
-	r.draft = p
-	return p, nil
-}
-
 // LoadDraft returns the saved commit message, or "" if there is none.
 func (r *Repo) LoadDraft() (string, error) {
-	p, err := r.draftPath()
+	p, err := r.gitPath(draftName)
 	if err != nil {
 		return "", err
 	}
@@ -56,7 +38,7 @@ func (r *Repo) LoadDraft() (string, error) {
 
 // SaveDraft keeps the message being written. An empty message removes the draft.
 func (r *Repo) SaveDraft(msg string) error {
-	p, err := r.draftPath()
+	p, err := r.gitPath(draftName)
 	if err != nil {
 		return err
 	}
@@ -84,7 +66,7 @@ func (r *Repo) SaveDraft(msg string) error {
 // the terminal: hooks, GPG or SSH signing and pinentry may need to prompt.
 // Committing from a file rather than stdin leaves stdin free for them.
 func (r *Repo) CommitDraft(stdin io.Reader, stdout, stderr io.Writer) error {
-	p, err := r.draftPath()
+	p, err := r.gitPath(draftName)
 	if err != nil {
 		return err
 	}
