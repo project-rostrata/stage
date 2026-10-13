@@ -49,3 +49,28 @@ The human chose `stage` from `sift`, `seam` and `stage`. It names the thing done
 - **Colours.** GNOME Terminal is dark. The human said visibility matters more than branding here, so stage needn't use the eel green. It keeps `#93B558` (the eel green's dark-surface token) for the focused pane because it reads well, and picks everything else for contrast. The starting palette is in the brief §4.
 - **Hunk navigation:** `n` and `p`, which match the Emacs style.
 - **Deleting an untracked file:** git-cola's Ctrl+Backspace was dropped, because what a terminal sends for it depends on the profile. The human asked for something that works in the terminal. It's **Delete** in the Status pane, behind the same y/N prompt. VTE sends Delete as `CSI 3 ~` regardless of the backspace setting. The message editor drops Ctrl+Backspace too, and Alt+Backspace covers deleting the previous word.
+
+## 2026-10-12 — One goroutine: reads time out after a tenth of a second
+
+The terminal is read with `VMIN=0, VTIME=1`, so a read returns after 100 ms even when no key was pressed. The event loop is then a plain loop on one goroutine:
+1. read;
+2. decode;
+3. handle the keys;
+4. check for a resize or a quit signal;
+5. redraw if anything changed.
+
+The alternative was a reader goroutine feeding a channel. A blocked read can't be cancelled, and that would matter in phase 5: while `git commit` owns the terminal, a background reader would steal keystrokes meant for hooks or pinentry. With timed reads, stage simply stops reading while it is suspended.
+
+The same timeout separates a lone Esc from the start of an escape sequence: an ESC with nothing after it for 100 ms is the Esc key (vim's default `ttimeoutlen` is also 100 ms). An idle stage wakes ten times a second and writes nothing.
+
+## 2026-10-12 — A status bar row under the panes
+
+The brief's layout has no room for messages, but the brief and `AGENTS.md` need one: git's errors and the `y/N` prompts have to go somewhere. The bottom row is a one-line status bar, and the three panes fill the rest. In phase 1 it shows the last key pressed, to check what GNOME Terminal sends.
+
+## 2026-10-12 — Tab and Shift+Tab cycle the panes
+
+The brief only says Tab leaves the message editor. In phase 1, Tab and Shift+Tab move focus Commit → Status → Diff and back, in every pane. Inside the editor Tab can't mean "insert a tab" anyway, and the same key working everywhere is simpler than an exception.
+
+## 2026-10-12 — Pasted line breaks become `\n`
+
+Terminals send a pasted line break as CR, as if Enter had been pressed (both VTE and tmux do). The decoder turns CR and CRLF inside a bracketed paste into LF, so the message editor receives text, not keystrokes.

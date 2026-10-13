@@ -11,27 +11,28 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
 
 **Done when** the human has reviewed the brief. Reviewed 2026-10-12; the human's answers to the open questions are in `docs/decisions.md`.
 
-## Phase 1 — toolchain and terminal layer
+## Phase 1 — toolchain and terminal layer — DONE (GNOME Terminal check pending)
 
-- `toolchain.sha256` (go1.27.2, brief §2), `scripts/fetch-go.sh`, `build.sh`, `test.sh`, and `go.mod` (`module stage`, `go 1.27`, no `require`).
+- `toolchain.sha256` (go1.27.2), `scripts/fetch-go.sh`, `build.sh`, `test.sh`, and `go.mod` (`module stage`, `go 1.27`, no `require`). `test.sh` runs the `gofmt` check, `go vet` and `go test`.
 - `term/`:
-  - raw mode on and off via `syscall` TCGETS/TCSETS;
-  - window size via `TIOCGWINSZ`;
-  - `SIGWINCH`;
-  - alternate screen, focus reporting and bracketed paste on and off;
+  - raw mode with cfmakeraw's flags;
+  - `VMIN=0, VTIME=1` reads, so the event loop is one goroutine (`docs/decisions.md`);
+  - window size, `SIGWINCH`, and SIGTERM/SIGHUP/SIGINT;
+  - the alternate screen with auto-wrap off, focus reporting and bracketed paste;
   - suspend and resume;
-  - restore on every exit path, including a panic.
-- `screen/`: the cell grid, the frame diff, 24-bit colour attributes, and the character width table.
-- `input/`: the key decoder:
-  - control keys, Alt as an ESC prefix, CSI and SS3 sequences (arrows, PgUp/PgDn, F5, Shift+arrows);
-  - focus in/out, paste blocks, and Ctrl+Space as NUL;
-  - telling a lone Esc apart from the start of a sequence (a short read timeout).
-- `main.go` draws three empty bordered panes with the brief's proportions and their titles, highlights the focused one, and quits on Ctrl+Q.
+  - an idempotent `Stop` for every exit path.
+- `screen/`: the cell grid (wide characters span two cells, and combining marks join their base), the frame diff, 24-bit colour, and the East Asian Width table.
+- `input/`: the key decoder, including Alt as an ESC prefix, xterm modifier parameters, focus events, paste blocks (line breaks normalised to `\n`), and the Esc timeout.
+- `ui/`: the palette (brief §4), the layout, borders, and focus with Ctrl+L/K/J, Tab/Shift+Tab, and Esc (from Commit).
+- A one-row status bar sits under the panes (`docs/decisions.md`). For now it shows the name of the last key pressed, so the keys GNOME Terminal sends can be checked. Phase 2 replaces that with key hints.
 
-**Done when:**
-- `test.sh` passes, with decoder tests built from the bytes VTE actually sends, and frame-diff tests;
-- the three panes redraw cleanly on resize, in tmux and in GNOME Terminal;
-- killing stage with a panic leaves a usable shell.
+**Checked:**
+- `test.sh` passes: decoder tests from VTE's byte sequences, and grid and frame-diff tests.
+- In tmux, the panes draw with the focused one in the accent colour, and redraw cleanly on resize, including the "too small" message under 50x12.
+- Every key in the brief's table decodes. A paste arrives as one event.
+- Ctrl+Q, SIGTERM and a deliberate panic (a throwaway build) each leave the shell in cooked mode on the normal screen. The panic prints its stack trace and exits 2.
+
+**Still to do:** the human runs `./build.sh && ./stage` in GNOME Terminal, checks the keys and the colours, and confirms that a focus change is reported.
 
 ## Phase 2 — read-only viewer
 
