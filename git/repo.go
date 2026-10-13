@@ -33,9 +33,6 @@ func Open(dir string) (*Repo, error) {
 	return &Repo{root: strings.TrimRight(string(out), "\n")}, nil
 }
 
-// Root returns the working tree's top-level directory.
-func (r *Repo) Root() string { return r.root }
-
 // read runs a git command that only reads. GIT_OPTIONAL_LOCKS=0 stops it taking
 // the index lock just to refresh stat information, so it never gets in the way
 // of the human's own git commands in another terminal. okCodes lists exit codes
