@@ -47,10 +47,21 @@ to another terminal window and back refreshes everything.
 | Commit | Ctrl+C Ctrl+C, from any pane |
 | Clear the message | Ctrl+C Ctrl+K (Ctrl+Y in the summary brings it back) |
 | Refresh | Ctrl+R or F5 |
+| Show the git commands stage ran | Ctrl+O (Esc closes) |
 | Quit | Ctrl+Q |
 
 The message is saved in `.git/STAGE_MSG` as you type, so quitting doesn't lose it. A commit
 runs `git commit` on the normal screen, so hooks and signing prompts work as usual.
+
+Every git command stage runs that changes something is appended to `.git/stage.log`, with the
+time, `ok` or `failed`, and the exact command line:
+
+```
+2026-10-12 23:13:01  ok      git --literal-pathspecs apply --cached --recount --whitespace=nowarn -
+2026-10-12 23:14:40  ok      git commit --file .git/STAGE_MSG
+```
+
+Ctrl+O shows it inside stage; `tail -f .git/stage.log` works in another terminal.
 
 ## Documentation
 

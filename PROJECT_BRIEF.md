@@ -70,7 +70,11 @@ git (the human's own install, config and hooks)
 
 `main.go` is the composition root. It builds every component once and passes it by argument. There are no package-level variables holding state.
 
-The repository is the only state. stage keeps nothing of its own except an unsent commit message (section 4), so quitting and restarting loses nothing.
+The repository is the only state. stage keeps only two files of its own, both in the git directory:
+- `.git/STAGE_MSG`, an unsent commit message (section 4);
+- `.git/stage.log`, the audit trail of the git commands it ran (section 4).
+
+Quitting and restarting loses nothing.
 
 ## 4. Key design decisions already made (with rationale)
 
@@ -150,6 +154,12 @@ Two cases support whole-file actions only:
 
 Whole files are staged with `git add -- <path>` and unstaged with `git restore --staged -- <path>`.
 
+**An audit trail of every git command that changes something.** stage is a thin layer over the ordinary git command line, so it records exactly what it ran. Each git command that changes the index, the working tree or history appends one line to `.git/stage.log`: the time, `ok` or `failed`, and the command line, quoted so it can be pasted into a shell. Those commands are `add`, `restore`, `rm --cached`, `clean`, `apply` and `commit`.
+- Read-only commands (`status`, `diff`, `rev-parse`) aren't recorded. They run on every refresh and selection.
+- A partial patch's text isn't recorded either; the entry is the `git apply … -` command line.
+- **Ctrl+O** shows the end of the trail in place of the Diff pane, newest at the bottom and failures in red. Esc or Ctrl+O closes it.
+- The file is plain text, so `less` or `tail -f` work too.
+
 **Destructive actions ask first.** Revert and delete each show a one-line `y/N` prompt naming what will be lost, as git-cola's dialogs do. Anything other than `y` cancels.
 
 **The commit message is written inline, in the Commit pane.** It has two fields, like git-cola's: a one-line summary and a multi-line extended description. On commit they are joined as `summary`, a blank line, then the description.
@@ -177,6 +187,7 @@ Whole files are staged with `git add -- <path>` and unstaged with `git restore -
 | Select diff lines | Ctrl+Space sets the mark, then move; Shift+J/Shift+K or Shift+arrows extend | Ctrl+G or Esc clears the mark |
 | Next / previous hunk | `n` / `p` | Emacs-style, alongside Ctrl+N/Ctrl+P for lines |
 | Refresh | Ctrl+R, F5, and automatically on focus-in | |
+| Show or hide the audit trail | Ctrl+O | Shown in place of the Diff pane; Esc also closes it |
 | Quit | Ctrl+Q | |
 
 The message editor takes the usual Emacs keys:

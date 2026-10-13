@@ -155,3 +155,16 @@ While suspended, Ctrl+C sends SIGINT to the whole foreground process group, stag
 - **Commit works from any pane:** stage something in Status or Diff, then Ctrl+C Ctrl+C. Committing doesn't require going back to the message.
 - **A restored draft puts the cursor at the end of the summary.**
 - **The draft is saved once per batch of keys.** Its path is looked up once. Saving per key, with a lookup each time, delayed a 100-character paste by about half a second.
+
+## 2026-10-12 — An audit trail of the git commands stage runs
+
+The human asked for a record of the git commands stage runs, since stage only drives the ordinary git command line. Their choices:
+- **Commands that change something only:** `add`, `restore`, `rm --cached`, `clean`, `apply`, `commit`. The reads run on every refresh and selection, and would bury them.
+- **A file plus an in-app view:** `.git/stage.log`, next to git's own logs, which is per repository and readable with `less` or `tail -f`. Ctrl+O shows it in place of the Diff pane. git-cola has a console view but no key for it, and Ctrl+O was free in every pane.
+- **The command line only, not a partial patch's text.**
+
+Each line is the time, `ok` or `failed`, and the command quoted for a POSIX shell, with control characters in `$'...'` form so every entry stays on one line. A command that worked but couldn't be logged is reported as an error, so the trail is never silently incomplete.
+
+## 2026-10-12 — --literal-pathspecs replaces GIT_LITERAL_PATHSPECS=1
+
+The literal-paths protection (above) moved from the environment variable to git's equivalent global flag. Both behave the same, and `TestPathsAreLiteral` still pins it. But an environment variable is invisible in a recorded command line, and the trail should show exactly what ran: `git --literal-pathspecs add -- 'a*'` can be pasted and behaves the same.

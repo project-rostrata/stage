@@ -35,6 +35,7 @@ type App struct {
 	status statusPane
 	diff   diffPane
 	msg    editor
+	audit  auditView
 	staged int    // how many paths are staged, so an empty commit is caught before suspending
 	errMsg string // the last error, shown in the status bar until the next key
 	info   string // the result of the last action, shown the same way
@@ -130,6 +131,9 @@ func (a *App) reload() {
 		a.errMsg = err.Error()
 		return
 	}
+	if a.audit.open {
+		a.loadAudit()
+	}
 	a.branch = st.Branch
 	a.counts = counts(st)
 	a.staged = len(st.Staged)
@@ -209,6 +213,13 @@ func (a *App) handle(k input.Key) {
 		a.pendingC = true
 		return
 	}
+	if k.Is('o', input.Ctrl) {
+		a.toggleAudit()
+		return
+	}
+	if a.audit.open && a.focus == paneDiff && a.handleAuditKey(k) {
+		return
+	}
 	if a.focus == paneCommit && a.handleCommitKey(k) {
 		return
 	}
@@ -277,6 +288,51 @@ func (a *App) handleCommitKey(k input.Key) bool {
 	}
 	if _, changed := a.msg.handle(k); changed {
 		a.msgChanged = true
+	}
+	return true
+}
+
+// toggleAudit shows or hides the audit trail in place of the Diff pane.
+func (a *App) toggleAudit() {
+	if a.audit.open {
+		a.audit.open = false
+		return
+	}
+	a.loadAudit()
+	a.audit.open = true
+	a.focus = paneDiff
+}
+
+func (a *App) loadAudit() {
+	lines, path, err := a.repo.AuditTrail(auditLines)
+	if err != nil {
+		a.errMsg = err.Error()
+	}
+	a.audit.load(lines, path)
+}
+
+// handleAuditKey scrolls the audit view and closes it with Esc. The diff's
+// own keys (s, Ctrl+U, the mark, n/p) do nothing while it's hidden; the keys
+// that work in every pane still do.
+func (a *App) handleAuditKey(k input.Key) bool {
+	wasG := a.pendingG
+	a.pendingG = false
+	switch {
+	case k.IsCode(input.Esc, 0):
+		a.audit.open = false
+		return true
+	case k.Is('q', input.Ctrl), k.Is('l', input.Ctrl), k.Is('k', input.Ctrl), k.Is('r', input.Ctrl),
+		k.IsCode(input.F5, 0), k.IsCode(input.Tab, 0), k.IsCode(input.BackTab, 0):
+		return false
+	case k.Is('g', 0) && !wasG:
+		a.pendingG = true
+		return true
+	}
+	if delta, ok := a.movement(k, wasG); ok {
+		a.audit.scroll(delta)
+		if delta == toEnd {
+			a.audit.atEnd = true
+		}
 	}
 	return true
 }
@@ -560,8 +616,13 @@ func (a *App) draw(g *screen.Grid) screen.Cursor {
 	cx, cy := a.msg.draw(g, l.commit, a.focus == paneCommit, a.pal)
 	drawBox(g, l.status, "Status", a.focus == paneStatus, a.pal)
 	a.status.draw(g, l.status, a.focus == paneStatus, a.pal)
-	drawBox(g, l.diff, a.diff.title(), a.focus == paneDiff, a.pal)
-	a.diff.draw(g, l.diff, a.focus == paneDiff, a.pal)
+	if a.audit.open {
+		drawBox(g, l.diff, a.audit.title(a.repo.Root()), a.focus == paneDiff, a.pal)
+		a.audit.draw(g, l.diff, a.pal)
+	} else {
+		drawBox(g, l.diff, a.diff.title(), a.focus == paneDiff, a.pal)
+		a.diff.draw(g, l.diff, a.focus == paneDiff, a.pal)
+	}
 	a.drawBar(g, l.bar)
 	return screen.Cursor{X: cx, Y: cy, Visible: a.focus == paneCommit && a.ask == nil}
 }
@@ -601,6 +662,9 @@ func (a *App) hint() string {
 	case paneStatus:
 		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+Q quit"
 	case paneDiff:
+		if a.audit.open {
+			return "j/k scroll · Esc or Ctrl+O close · Ctrl+Q quit"
+		}
 		if a.diff.entry.Section == git.Staged {
 			return "s unstage · Ctrl+Space mark · n/p hunk · Ctrl+Q quit"
 		}

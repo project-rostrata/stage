@@ -75,10 +75,20 @@ func (r *Repo) CommitDraft(stdin io.Reader, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("git", "commit", "--file", p)
+	// git runs at the top level, so a draft inside it is named relative to
+	// it: the same file, and a shorter line in the audit trail.
+	if rel, err := filepath.Rel(r.root, p); err == nil && !strings.HasPrefix(rel, "..") {
+		p = rel
+	}
+	args := []string{"commit", "--file", p}
+	cmd := exec.Command("git", args...)
 	cmd.Dir = r.root
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	if logErr := r.record(args, err); logErr != nil && err == nil {
+		return fmt.Errorf("committed, but %w", logErr)
+	}
+	if err != nil {
 		return fmt.Errorf("git commit: %w", err)
 	}
 	return nil

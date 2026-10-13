@@ -15,6 +15,7 @@ import (
 type Repo struct {
 	root  string
 	draft string // the draft message file's path, once looked up
+	audit string // the audit trail's path, once looked up
 }
 
 // Open finds the working tree that contains dir.
@@ -33,6 +34,9 @@ func Open(dir string) (*Repo, error) {
 	return &Repo{root: strings.TrimRight(string(out), "\n")}, nil
 }
 
+// Root returns the working tree's top-level directory.
+func (r *Repo) Root() string { return r.root }
+
 // read runs a git command that only reads. GIT_OPTIONAL_LOCKS=0 stops it taking
 // the index lock just to refresh stat information, so it never gets in the way
 // of the human's own git commands in another terminal. okCodes lists exit codes
@@ -42,19 +46,29 @@ func (r *Repo) read(okCodes []int, args ...string) ([]byte, error) {
 }
 
 // write runs a git command that changes the index or the working tree, with
-// stdin as its input (a patch, a commit message), or none.
+// stdin as its input (a patch), or none, and records it in the audit trail.
+// If the command worked but the trail couldn't be written, that is reported.
 func (r *Repo) write(stdin []byte, args ...string) error {
 	_, err := r.run(stdin, nil, nil, args...)
+	if logErr := r.record(literal(args), err); logErr != nil && err == nil {
+		return fmt.Errorf("done, but %w", logErr)
+	}
 	return err
 }
 
-// run runs git at the top level. GIT_LITERAL_PATHSPECS=1 makes every path
-// argument mean exactly that path, never a pattern: without it, deleting an
-// untracked file named "a*" with git clean also deletes ab.txt.
+// literal puts --literal-pathspecs in front of a command, so every path
+// argument means exactly that path, never a pattern: without it, deleting an
+// untracked file named "a*" with git clean also deletes ab.txt. It is a flag
+// rather than GIT_LITERAL_PATHSPECS=1 so the audit trail shows it.
+func literal(args []string) []string {
+	return append([]string{"--literal-pathspecs"}, args...)
+}
+
+// run runs git at the top level, with --literal-pathspecs.
 func (r *Repo) run(stdin []byte, okCodes []int, env []string, args ...string) ([]byte, error) {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", literal(args)...)
 	cmd.Dir = r.root
-	cmd.Env = append(append(os.Environ(), "GIT_LITERAL_PATHSPECS=1"), env...)
+	cmd.Env = append(os.Environ(), env...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}

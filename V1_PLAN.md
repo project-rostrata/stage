@@ -179,3 +179,24 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
 - The human uses stage on a real repository (`shelf`) in GNOME Terminal, and the colours (brief §4) have been tuned by eye.
 
 **Done when** the human has made real commits with it instead of git-cola.
+
+## After v1
+
+### Audit trail — DONE
+
+At the human's request: stage records every git command that changes something, because it is a thin layer over git's ordinary command line. The human chose:
+- changing commands only;
+- a file plus an in-app view;
+- the command line alone, without the patch text.
+
+What was built:
+- `git/audit.go` appends one line per command to `.git/stage.log`, found with `--git-path`: the time, `ok` or `failed`, and the shell-quoted command line.
+- `Repo.write` and `CommitDraft` record everything they run.
+- Commands now use `git --literal-pathspecs` instead of `GIT_LITERAL_PATHSPECS=1`, so the logged line is exactly what ran.
+- `git commit --file` names the draft relative to the top level, so the entry is short.
+- `ui/audit_view.go`: Ctrl+O shows the trail in place of the Diff pane, scrolled to the newest entry, with failures in red. It updates after each action, scrolls with the movement keys, and closes with Esc or Ctrl+O.
+
+**Checked:**
+- Tests: quoting (spaces, `*`, a quote, Japanese characters, a newline); that only changing commands are recorded, failures included; the exact recorded lines; reading the last lines of the trail.
+- The `a*` safety test passes with the flag.
+- In tmux: an empty trail; staging a file, staging a line and committing, each recorded; a failure (a stale `index.lock`) in red; Esc back to the diff.

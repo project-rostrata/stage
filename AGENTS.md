@@ -48,6 +48,8 @@ main -> ui -> (screen, input, patch, git)
 - Paths come from `-z` output and are passed back byte-for-byte. Never re-quote or "clean" them.
 - Every git call runs in the repository root (`git rev-parse --show-toplevel`, found once at startup).
 - Patches go to `git apply` on stdin, never through a temp file in the repo.
+- Every command runs as `git --literal-pathspecs …`, so a path never acts as a pattern. It's a flag rather than the environment variable so the audit trail shows it.
+- Every command that changes something goes through `Repo.write` (or `CommitDraft`), which appends it to the audit trail, `.git/stage.log`. Don't run a write command any other way. A command that worked but couldn't be logged is reported as an error.
 - Set `GIT_OPTIONAL_LOCKS=0` for read-only commands (`status`, `diff`), so a background refresh never contends with the human's own git commands in another terminal.
 - Read-only commands may run on every refresh. Write commands (`add`, `restore`, `apply`, `commit`, `rm`) run only from an explicit keypress, and a destructive one only after its `y/N` prompt.
 
