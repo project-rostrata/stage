@@ -68,14 +68,39 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
 
 **Still to do:** the human checks it in GNOME Terminal on a real repository, and tunes the colours by eye.
 
-## Phase 3 — whole-file actions and refresh
+## Phase 3 — whole-file actions — DONE
 
-- Stage and unstage a whole file from Status (`git add` / `git restore --staged`, or `git rm --cached` before the first commit).
-- Revert a file's unstaged edits (`git restore`), and delete an untracked file, each behind the `y/N` prompt.
-- Refresh on focus-in, Ctrl+R and F5 is already done (phase 2).
-- Errors from git are shown, never swallowed.
+- `git/`:
+  - `Stage` (`git add`, which also stages a deletion);
+  - `Unstage` (`git restore --staged`, both paths of a rename, and `git rm --cached` before the first commit);
+  - `RevertFile` (`git restore --worktree`, which keeps staged changes);
+  - `DeleteUntracked` (`git clean --force`, which can't touch a tracked file).
+- Every git command runs with `GIT_LITERAL_PATHSPECS=1` (`docs/decisions.md`).
+- `ui/`:
+  - Ctrl+S stages or unstages the selected file in Status.
+  - Ctrl+U asks before reverting a Modified file's unstaged changes.
+  - Delete asks before deleting an untracked file.
+  - The `y/N` question goes in the status bar, and anything but `y` cancels.
+  - The result or git's error stays in the bar until the next key.
+  - The bar's hints follow the focused pane.
+- After an action the selection stays in the same section, on the next file there (`docs/decisions.md`).
+- Refresh on focus, Ctrl+R and F5 landed in phase 2.
 
-**Done when:** each action matches what the same command does at the prompt, checked in a tmux session against a scratch repository, and a change made in another terminal appears on focus.
+**Checked:**
+- Action tests against real repositories:
+  - staging a modification, a deletion and an untracked file, and unstaging each;
+  - unstaging a rename, and unstaging before the first commit;
+  - reverting while keeping staged changes;
+  - deleting an untracked file, while refusing a tracked one;
+  - a file named `a*`. The test fails if `GIT_LITERAL_PATHSPECS` is removed: `git clean` then deletes `ab.txt` too.
+- Selection tests.
+- In tmux:
+  - Delete, then `n`, cancels.
+  - Delete, then `y`, deletes.
+  - Ctrl+S on an untracked file stages it and selects the next untracked file.
+  - Ctrl+U, then `y`, reverts.
+  - Ctrl+S on a staged rename unstages both paths.
+  - A stale `index.lock` shows git's own error in the bar.
 
 ## Phase 4 — hunks and lines
 

@@ -96,3 +96,15 @@ Settings such as `diff.noprefix`, `diff.mnemonicPrefix`, `color.ui=always` or an
 ## 2026-10-12 — Refresh and hunk keys arrived early
 
 Refresh (focus-in, Ctrl+R, F5) and `n`/`p` were planned for phases 3 and 4. Each was a few lines once the viewer existed, and the viewer is much less useful without refresh, so they landed in phase 2.
+
+## 2026-10-12 — Paths are always literal (GIT_LITERAL_PATHSPECS=1)
+
+Git reads a path argument as a pattern. `git add` happens to check for an exact filename first, but `git clean -- 'a*'` deletes every untracked file starting with `a`. Checked by hand, and pinned by `TestPathsAreLiteral`, which fails without the setting. Every git command stage runs sets `GIT_LITERAL_PATHSPECS=1`, so a path from `git status` only ever means that one file.
+
+## 2026-10-12 — Deleting an untracked file uses git clean
+
+Delete runs `git clean --force -- <path>` rather than removing the file directly. git clean refuses to delete anything tracked, so a stale Status list can never delete committed work. Empty directories are left behind; git doesn't track them, so they don't show up in Status.
+
+## 2026-10-12 — After an action, the next file in the same section is selected
+
+Once a file is staged, unstaged, reverted or deleted, it leaves its section. Keeping the same position in the whole list made the selection jump: staging an untracked file selected a Modified file. stage keeps the same position within the file's old section instead, so the next file in that list is selected, as in git-cola, and Ctrl+S can be pressed repeatedly to stage files one after another. Only when that section is now empty does it fall back to the same position in the whole list.

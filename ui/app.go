@@ -31,7 +31,9 @@ type App struct {
 	counts string
 	status statusPane
 	diff   diffPane
-	errMsg string // the last error, shown in the status bar until the next action
+	errMsg string // the last error, shown in the status bar until the next key
+	info   string // the result of the last action, shown the same way
+	ask    *question
 	// pendingG is set after a lone g, waiting for the second g of gg.
 	pendingG bool
 	quit     bool
@@ -145,9 +147,29 @@ func counts(st git.Status) string {
 	return strings.Join(parts, " · ")
 }
 
+// question is a y/N prompt in the status bar, asked before a destructive action.
+type question struct {
+	text   string
+	action func() (string, error)
+}
+
 func (a *App) handle(k input.Key) {
-	if k.Code != input.FocusOut {
-		a.errMsg = ""
+	if k.Code == input.FocusIn || k.Code == input.FocusOut {
+		if a.ask == nil && k.Code == input.FocusIn {
+			a.reload()
+		}
+		return
+	}
+	a.errMsg, a.info = "", ""
+	if a.ask != nil {
+		q := a.ask
+		a.ask = nil
+		if k.Is('y', 0) || k.Is('Y', 0) {
+			a.do(q.action)
+		} else {
+			a.info = "Cancelled"
+		}
+		return
 	}
 	wasG := a.pendingG
 	a.pendingG = false
@@ -164,12 +186,18 @@ func (a *App) handle(k input.Key) {
 		a.focus = (a.focus + 1) % 3
 	case k.IsCode(input.BackTab, 0):
 		a.focus = (a.focus + 2) % 3
-	case k.Is('r', input.Ctrl), k.IsCode(input.F5, 0), k.Code == input.FocusIn:
+	case k.Is('r', input.Ctrl), k.IsCode(input.F5, 0):
 		a.reload()
 	case a.focus == paneCommit:
 		if k.IsCode(input.Esc, 0) {
 			a.focus = paneStatus
 		}
+	case a.focus == paneStatus && k.Is('s', input.Ctrl):
+		a.toggleStaged()
+	case a.focus == paneStatus && k.Is('u', input.Ctrl):
+		a.askRevertFile()
+	case a.focus == paneStatus && k.IsCode(input.Delete, 0):
+		a.askDelete()
 	case k.Is('g', 0) && !wasG:
 		a.pendingG = true
 	default:
@@ -182,6 +210,63 @@ func (a *App) handle(k input.Key) {
 		}
 		if a.focus == paneDiff && k.Is('p', 0) {
 			a.diff.moveHunk(-1)
+		}
+	}
+}
+
+// do runs an action that changes the repository, shows its result or error,
+// and reloads.
+func (a *App) do(action func() (string, error)) {
+	msg, err := action()
+	if err != nil {
+		a.errMsg = err.Error()
+	} else {
+		a.info = msg
+	}
+	a.reload()
+}
+
+// toggleStaged stages the selected file, or unstages it if it's under Staged.
+func (a *App) toggleStaged() {
+	e, ok := a.status.selected()
+	if !ok {
+		return
+	}
+	if e.Section == git.Staged {
+		a.do(func() (string, error) { return "Unstaged " + e.Path, a.repo.Unstage(e) })
+		return
+	}
+	a.do(func() (string, error) { return "Staged " + e.Path, a.repo.Stage(e) })
+}
+
+func (a *App) askRevertFile() {
+	e, ok := a.status.selected()
+	switch {
+	case !ok:
+		return
+	case e.Section == git.Untracked:
+		a.errMsg = "An untracked file has nothing to revert: Delete removes it"
+	case e.Section != git.Modified:
+		a.errMsg = "Ctrl+U reverts unstaged changes: select the file under Modified"
+	default:
+		a.ask = &question{
+			text:   "Revert all unstaged changes to " + e.Path + "? They can't be recovered. [y/N]",
+			action: func() (string, error) { return "Reverted " + e.Path, a.repo.RevertFile(e) },
+		}
+	}
+}
+
+func (a *App) askDelete() {
+	e, ok := a.status.selected()
+	switch {
+	case !ok:
+		return
+	case e.Section != git.Untracked:
+		a.errMsg = "Only untracked files can be deleted"
+	default:
+		a.ask = &question{
+			text:   "Delete untracked file " + e.Path + "? It can't be recovered. [y/N]",
+			action: func() (string, error) { return "Deleted " + e.Path, a.repo.DeleteUntracked(e) },
 		}
 	}
 }
@@ -248,16 +333,23 @@ func (a *App) draw(g *screen.Grid) {
 	a.drawBar(g, l.bar)
 }
 
-// drawBar draws the status bar: the branch and counts, or the last error, on
-// the left, and the main keys on the right.
+// drawBar draws the status bar. A question, an error or the result of the
+// last action takes the whole bar; otherwise it shows the branch and counts on
+// the left and the focused pane's main keys on the right.
 func (a *App) drawBar(g *screen.Grid, r rect) {
-	hint := "Tab pane · Ctrl+R refresh · Ctrl+Q quit"
-	room := r.w - len([]rune(hint)) - 3
-	if a.errMsg != "" {
-		msg := strings.ReplaceAll(a.errMsg, "\n", " ")
-		g.Put(r.x+1, r.y, msg, a.pal.errorText, r.w-2)
+	switch {
+	case a.ask != nil:
+		g.Put(r.x+1, r.y, a.ask.text, a.pal.errorText, r.w-2)
+		return
+	case a.errMsg != "":
+		g.Put(r.x+1, r.y, strings.ReplaceAll(a.errMsg, "\n", " "), a.pal.errorText, r.w-2)
+		return
+	case a.info != "":
+		g.Put(r.x+1, r.y, a.info, a.pal.statusBar, r.w-2)
 		return
 	}
+	hint := a.hint()
+	room := r.w - len([]rune(hint)) - 3
 	x := r.x + 1
 	if a.branch != "" {
 		x += g.Put(x, r.y, a.branch, a.pal.branch, room)
@@ -265,4 +357,15 @@ func (a *App) drawBar(g *screen.Grid, r rect) {
 	}
 	g.Put(x, r.y, a.counts, a.pal.statusBar, max(room-(x-r.x), 0))
 	g.Put(r.x+r.w-len([]rune(hint))-1, r.y, hint, a.pal.hint, len([]rune(hint)))
+}
+
+// hint lists the focused pane's main keys.
+func (a *App) hint() string {
+	switch a.focus {
+	case paneStatus:
+		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+Q quit"
+	case paneDiff:
+		return "n/p hunk · Ctrl+Q quit"
+	}
+	return "Tab pane · Ctrl+Q quit"
 }

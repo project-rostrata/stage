@@ -19,20 +19,47 @@ type statusPane struct {
 	top     int // first visible row, counting headings
 }
 
-// setStatus replaces the list, keeping the same path selected if it is still
-// listed under the same section, and otherwise staying at the same position.
+// setStatus replaces the list. The same path stays selected if it is still
+// listed under the same section. If it has moved (just staged, say), the
+// selection stays at the same place in its old section, which is the next file
+// there, as in git-cola. If that section is now empty, it stays at the same
+// place in the whole list.
 func (p *statusPane) setStatus(st git.Status) {
 	old, had := p.selected()
+	pos := p.positionInSection()
 	p.entries = st.Entries()
 	if had {
+		var inSection []int
 		for i, e := range p.entries {
 			if e.Section == old.Section && e.Path == old.Path {
 				p.cursor = i
 				return
 			}
+			if e.Section == old.Section {
+				inSection = append(inSection, i)
+			}
+		}
+		if len(inSection) > 0 {
+			p.cursor = inSection[min(pos, len(inSection)-1)]
+			return
 		}
 	}
 	p.cursor = min(p.cursor, max(len(p.entries)-1, 0))
+}
+
+// positionInSection is the selected entry's index within its own section.
+func (p *statusPane) positionInSection() int {
+	e, ok := p.selected()
+	if !ok {
+		return 0
+	}
+	n := 0
+	for i := 0; i < p.cursor; i++ {
+		if p.entries[i].Section == e.Section {
+			n++
+		}
+	}
+	return n
 }
 
 func (p *statusPane) selected() (git.Entry, bool) {

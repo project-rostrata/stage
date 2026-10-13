@@ -40,9 +40,26 @@ func (r *Repo) Root() string { return r.root }
 // of the human's own git commands in another terminal. okCodes lists exit codes
 // other than 0 that mean success (git diff --no-index exits 1 when the files differ).
 func (r *Repo) read(okCodes []int, args ...string) ([]byte, error) {
+	return r.run(nil, okCodes, []string{"GIT_OPTIONAL_LOCKS=0"}, args...)
+}
+
+// write runs a git command that changes the index or the working tree, with
+// stdin as its input (a patch, a commit message), or none.
+func (r *Repo) write(stdin []byte, args ...string) error {
+	_, err := r.run(stdin, nil, nil, args...)
+	return err
+}
+
+// run runs git at the top level. GIT_LITERAL_PATHSPECS=1 makes every path
+// argument mean exactly that path, never a pattern: without it, deleting an
+// untracked file named "a*" with git clean also deletes ab.txt.
+func (r *Repo) run(stdin []byte, okCodes []int, env []string, args ...string) ([]byte, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = r.root
-	cmd.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	cmd.Env = append(append(os.Environ(), "GIT_LITERAL_PATHSPECS=1"), env...)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
