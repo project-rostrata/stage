@@ -80,10 +80,10 @@ func (g *Grid) Put(x, y int, s string, st Style, maxWidth int) int {
 	limit := min(x+maxWidth, g.w)
 	col := x
 	for _, r := range s {
-		w := Width(r)
+		w := DrawnWidth(r)
 		text := string(r)
-		if w == 0 && (r < 0x20 || (r >= 0x7f && r < 0xa0)) {
-			w, text = 1, replacement
+		if isControl(r) {
+			text = replacement
 		}
 		if w == 0 {
 			if col > x {

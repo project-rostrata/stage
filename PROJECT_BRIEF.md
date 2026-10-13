@@ -107,7 +107,7 @@ Branches, stash, merge, rebase, amend, push and pull are deliberately left to th
 - Status groups files under headings, in this order: **Staged**, **Modified**, **Untracked**, and **Unmerged** if there are any. Unmerged files can be viewed but have no actions, because merges are resolved outside stage.
 - Diff shows:
   - each hunk header;
-  - a running line number down the left edge, as git-cola does;
+  - the old and new line numbers down the left edge, as git-cola does (a removed line has only an old number, an added line only a new one);
   - added lines on a green background and removed lines on red;
   - tabs expanded;
   - long lines wrapped, not cut off.

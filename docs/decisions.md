@@ -74,3 +74,25 @@ The brief only says Tab leaves the message editor. In phase 1, Tab and Shift+Tab
 ## 2026-10-12 — Pasted line breaks become `\n`
 
 Terminals send a pasted line break as CR, as if Enter had been pressed (both VTE and tmux do). The decoder turns CR and CRLF inside a bracketed paste into LF, so the message editor receives text, not keystrokes.
+
+## 2026-10-12 — Old and new line numbers, as git-cola shows them
+
+The brief said "a running line number down the left edge, as git-cola does". Looking at the human's screenshot again, git-cola's gutter has two columns: the old file's line number and the new file's. The top row of a hunk shows `.. ..` in both. A new file only fills the second column, which is why the screenshot looks like a single running count. stage does the same: context lines show both numbers, removed lines only the old one, and added lines only the new one. They are the real line numbers in the file, which helps when going back to an editor. The brief has been updated.
+
+## 2026-10-12 — Diff flags override the human's diff config
+
+stage passes these to every `git diff`, because the diff text has to be parseable and, from phase 4, has to apply with `git apply`:
+- `--no-color` and `--no-ext-diff`;
+- `--no-textconv`;
+- `--no-relative`;
+- `--src-prefix=a/` and `--dst-prefix=b/`.
+
+Settings such as `diff.noprefix`, `diff.mnemonicPrefix`, `color.ui=always` or an external diff tool in the human's `~/.gitconfig` would otherwise break parsing or patches. A test runs against a repository with all four set. Settings that only change which lines differ (`diff.algorithm`, `diff.context`) are kept, so stage shows the same hunks as `git diff` at the prompt.
+
+## 2026-10-12 — Untracked files are listed one by one
+
+`git status` normally lists a new directory as a single entry. stage passes `--untracked-files=all`, as git-cola's Status list does (the human's screenshot shows `android/Dockerfile` and its siblings separately), so each untracked file can be read and staged on its own.
+
+## 2026-10-12 — Refresh and hunk keys arrived early
+
+Refresh (focus-in, Ctrl+R, F5) and `n`/`p` were planned for phases 3 and 4. Each was a few lines once the viewer existed, and the viewer is much less useful without refresh, so they landed in phase 2.

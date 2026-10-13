@@ -34,22 +34,45 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
 
 **Still to do:** the human runs `./build.sh && ./stage` in GNOME Terminal, checks the keys and the colours, and confirms that a focus change is reported.
 
-## Phase 2 — read-only viewer
+## Phase 2 — read-only viewer — DONE (GNOME Terminal check pending)
 
-- `git/`: find the repository root, and parse `status --porcelain=v2 -z` into staged, modified, untracked and unmerged entries, including renames and paths with spaces or newlines.
-- `git/`: parse unified diffs into files, hunks and lines. Untracked files get the `--no-index` diff, and binary files are recognised.
+- `git/`:
+  - `Open` finds the top level.
+  - Read-only commands run with `GIT_OPTIONAL_LOCKS=0`.
+  - `Status` parses `status --porcelain=v2 -z --branch --untracked-files=all`, including renames, unmerged paths, and paths with spaces or newlines.
+  - `Diff` gives the staged, unstaged or untracked (`--no-index`) diff with flags that override the human's diff config (`docs/decisions.md`).
+  - `parseDiff` reads hunks with old and new line numbers, binary files, the no-newline marker, and combined diffs for unmerged paths.
 - `ui/`:
-  - the Status pane, grouped and navigable;
-  - the Diff pane for the selected entry (line numbers, hunk headers, colours, tab expansion, wrapping);
-  - focus keys and movement keys (brief §4).
+  - the Status pane, grouped under headings, with a coloured status letter per entry and long paths shortened from the left;
+  - the Diff pane with old and new line numbers (brief §4, changed in `docs/decisions.md`), hunk headers, the added and removed backgrounds, tabs expanded, long lines wrapped, and the mode, rename and binary lines from the header;
+  - the path and "(staged)" in the Diff pane's title;
+  - a `▶` cursor in the Diff pane;
+  - the movement keys (`j`/`k`, Ctrl+N/P, arrows, `d`/`u`, Ctrl+V/Alt+V, PgUp/PgDn, `gg`/`G`, Alt+`<`/Alt+`>`, Home/End);
+  - `n`/`p` between hunks;
+  - the branch and counts, or the last error, in the status bar.
+- Pulled forward from phases 3 and 4: refresh on focus-in, Ctrl+R and F5, keeping the selection and the diff's cursor; and `n`/`p`.
 
-**Done when:** parser tests pass, and stage shows a real repository's changes the way git-cola does, including an untracked file, a rename, a binary file, and a file with a tab and a wide character.
+**Checked:**
+- Parser tests pass, including against real temporary repositories and a repository whose config sets `diff.noprefix`, `diff.mnemonicPrefix`, `color.ui=always` and `diff.external`.
+- Text helper and layout tests pass.
+- In tmux, against a scratch repository, stage shows each of these the way git-cola does:
+  - a partly staged file, under both Staged and Modified;
+  - a staged rename;
+  - a two-hunk file;
+  - a binary file;
+  - an untracked file in a directory with a space in its name;
+  - tabs, Japanese text and a wrapped long line;
+  - the end of a 200-line file;
+  - a conflicted file (its combined diff, read-only).
+- An outside change appears on focus-in. Starting outside a repository prints git's error and exits 1.
+
+**Still to do:** the human checks it in GNOME Terminal on a real repository, and tunes the colours by eye.
 
 ## Phase 3 — whole-file actions and refresh
 
 - Stage and unstage a whole file from Status (`git add` / `git restore --staged`, or `git rm --cached` before the first commit).
 - Revert a file's unstaged edits (`git restore`), and delete an untracked file, each behind the `y/N` prompt.
-- Refresh on focus-in, Ctrl+R and F5, keeping the selection and scroll where possible.
+- Refresh on focus-in, Ctrl+R and F5 is already done (phase 2).
 - Errors from git are shown, never swallowed.
 
 **Done when:** each action matches what the same command does at the prompt, checked in a tmux session against a scratch repository, and a change made in another terminal appears on focus.
@@ -60,7 +83,7 @@ The phases for stage v1, in order. Each phase lands as one or more commits on `m
 - `ui/`:
   - the mark and selection in the Diff pane;
   - `s`/Ctrl+S and Ctrl+U on a selection or on the hunk under the cursor;
-  - hunk navigation;
+  - hunk navigation (already done in phase 2);
   - the cursor stays near the same place after the diff reloads.
 
 **Done when** round-trip tests against real temporary repositories pass for:

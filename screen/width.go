@@ -8,7 +8,7 @@ import "unicode"
 // them before drawing.
 func Width(r rune) int {
 	switch {
-	case r < 0x20 || (r >= 0x7f && r < 0xa0):
+	case isControl(r):
 		return 0
 	case r < 0x300:
 		return 1
@@ -20,14 +20,25 @@ func Width(r rune) int {
 	return 1
 }
 
-// StringWidth returns the columns s takes, by Width.
+// DrawnWidth is the columns r takes once Grid.Put has drawn it: the same as
+// Width, except that a control character is drawn as U+FFFD, one column wide.
+func DrawnWidth(r rune) int {
+	if isControl(r) {
+		return 1
+	}
+	return Width(r)
+}
+
+// StringWidth returns the columns s takes once drawn.
 func StringWidth(s string) int {
 	n := 0
 	for _, r := range s {
-		n += Width(r)
+		n += DrawnWidth(r)
 	}
 	return n
 }
+
+func isControl(r rune) bool { return r < 0x20 || (r >= 0x7f && r < 0xa0) }
 
 func isZeroWidth(r rune) bool {
 	return unicode.In(r, unicode.Mn, unicode.Me) ||

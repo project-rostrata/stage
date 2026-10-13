@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"stage/git"
 	"stage/screen"
 	"stage/term"
 	"stage/ui"
@@ -21,12 +22,17 @@ func main() {
 // run is the composition root: it builds each component once and wires them
 // together. The terminal is restored on every way out, including a panic.
 func run() (code int) {
+	repo, err := git.Open(".")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "stage:", err)
+		return 1
+	}
 	t, err := term.Open()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "stage:", err)
 		return 1
 	}
-	app := ui.New(t, screen.New(t))
+	app := ui.New(t, screen.New(t), repo)
 
 	defer func() {
 		if r := recover(); r != nil {
