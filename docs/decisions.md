@@ -204,3 +204,18 @@ The human asked for a view of the most recent branches: whether each is behind i
 ## 2026-10-13 — A commit that leaves the tree clean moves to the branch list
 
 The human asked for this. It's the startup rule applied again: with nothing left to stage, the next thing is usually another branch. Only a successful commit does it, and only when nothing staged, modified, untracked or unmerged remains, so a partial commit stays on the three panes. Reverting or deleting the last change doesn't move to the list; the human asked only about commits.
+
+## 2026-10-14 — A history view, and Ctrl+X Ctrl+B to switch views
+
+The human asked for a history view reusing the three panes: the history top left, the files changed below, and the selected file's diff on the right. This reverses v1's "no log or history browsing" for the current branch, read-only.
+
+- **Ctrl+X Ctrl+B, then a letter, switches views.** The human chose Emacs's list-buffers over a Ctrl+T that cycled three views or a separate key per view.
+  - The bar lists `c` changes, `b` branches, `h` history.
+  - The chord is read before the Commit editor sees a key, so it works there too. The editor's Ctrl+B (back a character) still works on its own.
+  - Ctrl+T is gone.
+- **The current branch only, newest first, 200 at a time.** Other branches' histories weren't asked for. Reading 200 more when the cursor reaches the end keeps a long history from being read at once.
+- **Each commit is diffed against its first parent,** with `git diff-tree`, so a merge shows what it brought into the branch. A root commit uses `--root`.
+- **The left column is split in half.** Commit's seven rows are too few for a list.
+- **Rows show the short hash and the summary; the files pane's title shows the commit's local time.** At 110 columns the left column is 27 wide, too narrow for a time on every row. The hash was first in the title too, but that cut the time off.
+- **`--no-show-signature`.** A repository's config can set `log.showSignature` and `gpg.program`, and plain `git log` then runs that program for any commit carrying a signature header, which a planted `.git` can hold. This was checked with plain git before the flag went in.
+- **Hashes are checked before they're passed back to git.** They come from git's own output, but a hash is the one argument that can't follow `--`.

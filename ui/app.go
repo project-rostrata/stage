@@ -23,12 +23,13 @@ const (
 	paneDiff
 )
 
-// view is what fills the body: the three panes, or the branch list.
+// view is what fills the body: the three panes, the branch list, or the history.
 type view int
 
 const (
 	viewChanges view = iota
 	viewBranches
+	viewHistory
 )
 
 // App is stage's state and its single-threaded event loop.
@@ -47,6 +48,7 @@ type App struct {
 	msg      editor
 	audit    auditView
 	branches branchView
+	history  historyView
 	staged   int    // how many paths are staged, so an empty commit is caught before suspending
 	clean    bool   // nothing staged, modified, untracked or unmerged
 	errMsg   string // the last error, shown in the status bar until the next key
@@ -56,6 +58,9 @@ type App struct {
 	pendingG bool
 	// pendingC is set after Ctrl+C, waiting for the second key of the chord.
 	pendingC bool
+	// pendingX is set after Ctrl+X, and choosing after Ctrl+X Ctrl+B, waiting
+	// for the letter of the view to show.
+	pendingX, choosing bool
 	// msgChanged is set when the message was edited, so the draft is saved
 	// once per batch of keys rather than once per key.
 	msgChanged bool
@@ -65,7 +70,7 @@ type App struct {
 // New returns the app, focused on Status as git-cola starts.
 func New(t *term.Terminal, s *screen.Screen, r *git.Repo) *App {
 	return &App{term: t, scr: s, repo: r, pal: darkPalette(), focus: paneStatus, diff: diffPane{mark: -1},
-		msg: newEditor(""), branches: branchView{loc: time.Local}}
+		msg: newEditor(""), branches: branchView{loc: time.Local}, history: newHistoryView(time.Local)}
 }
 
 // Run draws and handles keys until the human quits or a signal asks stage to exit.
@@ -151,8 +156,11 @@ func (a *App) reload() {
 	if a.audit.open {
 		a.loadAudit()
 	}
-	if a.view == viewBranches {
+	switch a.view {
+	case viewBranches:
 		a.loadBranches()
+	case viewHistory:
+		a.loadHistory()
 	}
 	a.branch = st.Branch
 	a.counts = counts(st)
@@ -230,25 +238,33 @@ func (a *App) handle(k input.Key) {
 		}
 		return
 	}
+	if a.pendingX || a.choosing {
+		a.handleViewChord(k)
+		return
+	}
 	if k.Is('c', input.Ctrl) {
 		a.pendingC = true
 		return
 	}
-	if k.Is('t', input.Ctrl) {
-		a.toggleView()
+	if k.Is('x', input.Ctrl) {
+		a.pendingX = true
 		return
 	}
 	if k.Is('o', input.Ctrl) {
-		if a.view == viewBranches {
-			// From the branch list, Ctrl+O always shows the trail.
+		if a.view != viewChanges {
+			// From the other views, Ctrl+O always shows the trail.
 			a.view = viewChanges
 			a.audit.open = false
 		}
 		a.toggleAudit()
 		return
 	}
-	if a.view == viewBranches {
+	switch a.view {
+	case viewBranches:
 		a.handleBranchKey(k)
+		return
+	case viewHistory:
+		a.handleHistoryKey(k)
 		return
 	}
 	if a.audit.open && a.focus == paneDiff && a.handleAuditKey(k) {
@@ -308,13 +324,29 @@ func (a *App) handle(k input.Key) {
 	}
 }
 
-// toggleView switches between the three panes and the branch list.
-func (a *App) toggleView() {
-	if a.view == viewBranches {
-		a.view = viewChanges
+// handleViewChord reads the rest of Ctrl+X Ctrl+B, Emacs's list of buffers:
+// Ctrl+B, then a letter naming the view to show.
+func (a *App) handleViewChord(k input.Key) {
+	if a.pendingX {
+		a.pendingX = false
+		if k.Is('b', input.Ctrl) {
+			a.choosing = true
+		} else {
+			a.info = "Ctrl+X cancelled"
+		}
 		return
 	}
-	a.showBranches()
+	a.choosing = false
+	switch {
+	case k.Is('c', 0):
+		a.view = viewChanges
+	case k.Is('b', 0):
+		a.showBranches()
+	case k.Is('h', 0):
+		a.showHistory()
+	default:
+		a.info = "Cancelled"
+	}
 }
 
 func (a *App) showBranches() {
@@ -336,7 +368,7 @@ func (a *App) loadBranches() {
 }
 
 // handleBranchKey moves through the branch list and switches with Enter.
-// Ctrl+T, Ctrl+O and the Ctrl+C chord are handled before it.
+// Ctrl+O and the Ctrl+C and Ctrl+X chords are handled before it.
 func (a *App) handleBranchKey(k input.Key) {
 	wasG := a.pendingG
 	a.pendingG = false
@@ -380,6 +412,116 @@ func (a *App) switchBranch() {
 		return
 	}
 	a.ask = &question{text: "Switch to " + b.Name + "? Your uncommitted changes come along (y/N)", action: run}
+}
+
+func (a *App) showHistory() {
+	a.view = viewHistory
+	a.loadHistory()
+}
+
+// loadHistory re-reads the commits, then the selected commit's files and the
+// selected file's diff.
+func (a *App) loadHistory() {
+	commits, err := a.repo.Log(a.history.limit)
+	if err != nil {
+		a.errMsg = err.Error()
+		return
+	}
+	a.history.setCommits(commits)
+	a.loadCommitFiles()
+}
+
+func (a *App) loadCommitFiles() {
+	c, ok := a.history.selectedCommit()
+	if !ok {
+		a.history.setFiles("", nil)
+		a.history.diff.clear("")
+		return
+	}
+	files, err := a.repo.CommitFiles(c)
+	if err != nil {
+		a.errMsg = err.Error()
+	}
+	a.history.setFiles(c.Hash, files)
+	a.loadCommitDiff()
+}
+
+func (a *App) loadCommitDiff() {
+	h := &a.history
+	c, okC := h.selectedCommit()
+	f, okF := h.selectedFile()
+	if !okC || !okF {
+		h.diff.clear("")
+		return
+	}
+	d, err := a.repo.CommitDiff(c, f)
+	if err != nil {
+		h.diff.clear("")
+		a.errMsg = err.Error()
+		return
+	}
+	// The diff pane is Status's; a committed change shows as a plain one.
+	h.diff.setDiff(git.Entry{Section: git.Modified, Code: f.Code, Path: f.Path, OrigPath: f.OrigPath}, d)
+}
+
+// handleHistoryKey moves through the history's panes, which only read.
+// Ctrl+O and the Ctrl+C and Ctrl+X chords are handled before it.
+func (a *App) handleHistoryKey(k input.Key) {
+	h := &a.history
+	wasG := a.pendingG
+	a.pendingG = false
+	switch {
+	case k.Is('q', input.Ctrl):
+		a.quit = true
+	case k.Is('r', input.Ctrl), k.IsCode(input.F5, 0):
+		a.reload()
+	case k.Is('l', input.Ctrl):
+		h.focus = paneCommit
+	case k.Is('k', input.Ctrl):
+		h.focus = paneStatus
+	case k.Is('j', input.Ctrl):
+		h.focus = paneDiff
+	case k.IsCode(input.Tab, 0):
+		h.focus = (h.focus + 1) % 3
+	case k.IsCode(input.BackTab, 0):
+		h.focus = (h.focus + 2) % 3
+	case k.Is('g', 0) && !wasG:
+		a.pendingG = true
+	case h.focus == paneDiff && k.Is('n', 0):
+		h.diff.moveHunk(1)
+	case h.focus == paneDiff && k.Is('p', 0):
+		h.diff.moveHunk(-1)
+	default:
+		if delta, ok := a.movement(k, wasG); ok {
+			a.moveInHistory(delta)
+		}
+	}
+}
+
+func (a *App) moveInHistory(delta int) {
+	h := &a.history
+	switch h.focus {
+	case paneCommit:
+		before := h.commit.cursor
+		h.commit.move(delta, len(h.commits))
+		if h.atEnd() {
+			// Read another page further back, and carry on into it.
+			h.limit += historyPage
+			a.loadHistory()
+			h.commit.move(delta-(h.commit.cursor-before), len(h.commits))
+		}
+		if h.commit.cursor != before {
+			a.loadCommitFiles()
+		}
+	case paneStatus:
+		before := h.file.cursor
+		h.file.move(delta, len(h.files))
+		if h.file.cursor != before {
+			a.loadCommitDiff()
+		}
+	case paneDiff:
+		h.diff.move(delta)
+	}
 }
 
 // handleCommitKey gives a key to the message editor, except for the keys that
@@ -696,8 +838,15 @@ func (a *App) movement(k input.Key, afterG bool) (int, bool) {
 }
 
 func (a *App) pageHeight() int {
-	if a.view == viewBranches {
+	switch {
+	case a.view == viewBranches:
 		return max(a.lay.whole.h-3, 1)
+	case a.view == viewHistory && a.history.focus == paneCommit:
+		return max(a.lay.commits.h-3, 1)
+	case a.view == viewHistory && a.history.focus == paneStatus:
+		return max(a.lay.files.h-3, 1)
+	case a.view == viewHistory:
+		return max(a.lay.diff.h-3, 1)
 	}
 	if a.focus == paneDiff {
 		return max(a.lay.diff.h-3, 1)
@@ -733,6 +882,17 @@ func (a *App) draw(g *screen.Grid) screen.Cursor {
 		a.drawBar(g, l.bar)
 		return screen.Cursor{}
 	}
+	if a.view == viewHistory {
+		h := &a.history
+		drawBox(g, l.commits, "History", h.focus == paneCommit, a.pal)
+		h.drawCommits(g, l.commits, h.focus == paneCommit, a.pal)
+		drawBox(g, l.files, h.filesTitle(), h.focus == paneStatus, a.pal)
+		h.drawFiles(g, l.files, h.focus == paneStatus, a.pal)
+		drawBox(g, l.diff, h.diff.title(), h.focus == paneDiff, a.pal)
+		h.diff.draw(g, l.diff, h.focus == paneDiff, a.pal)
+		a.drawBar(g, l.bar)
+		return screen.Cursor{}
+	}
 	drawBox(g, l.commit, "Commit", a.focus == paneCommit, a.pal)
 	cx, cy := a.msg.draw(g, l.commit, a.focus == paneCommit, a.pal)
 	drawBox(g, l.status, "Status", a.focus == paneStatus, a.pal)
@@ -759,6 +919,12 @@ func (a *App) drawBar(g *screen.Grid, r rect) {
 	case a.pendingC:
 		g.Put(r.x+1, r.y, "Ctrl+C-  then Ctrl+C commit · Ctrl+K clear the message", a.pal.statusBar, r.w-2)
 		return
+	case a.pendingX:
+		g.Put(r.x+1, r.y, "Ctrl+X-  then Ctrl+B views", a.pal.statusBar, r.w-2)
+		return
+	case a.choosing:
+		g.Put(r.x+1, r.y, "Show:  c changes · b branches · h history", a.pal.statusBar, r.w-2)
+		return
 	case a.errMsg != "":
 		g.Put(r.x+1, r.y, strings.ReplaceAll(a.errMsg, "\n", " "), a.pal.errorText, r.w-2)
 		return
@@ -779,20 +945,25 @@ func (a *App) drawBar(g *screen.Grid, r rect) {
 
 // hint lists the focused pane's main keys.
 func (a *App) hint() string {
-	if a.view == viewBranches {
-		return "Enter switch · Ctrl+T changes · Ctrl+Q quit"
+	switch {
+	case a.view == viewBranches:
+		return "Enter switch · Ctrl+X Ctrl+B views · Ctrl+Q quit"
+	case a.view == viewHistory && a.history.focus == paneDiff:
+		return "n/p hunk · Ctrl+X Ctrl+B views · Ctrl+Q quit"
+	case a.view == viewHistory:
+		return "Tab next pane · Ctrl+X Ctrl+B views · Ctrl+Q quit"
 	}
 	switch a.focus {
 	case paneStatus:
-		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+T branches · Ctrl+Q quit"
+		return "Ctrl+S stage/unstage · Ctrl+U revert · Del delete · Ctrl+X Ctrl+B views · Ctrl+Q quit"
 	case paneDiff:
 		if a.audit.open {
-			return "j/k scroll · Esc or Ctrl+O close · Ctrl+T branches · Ctrl+Q quit"
+			return "j/k scroll · Esc or Ctrl+O close · Ctrl+X Ctrl+B views · Ctrl+Q quit"
 		}
 		if a.diff.entry.Section == git.Staged {
-			return "s unstage · Ctrl+Space mark · n/p hunk · Ctrl+T branches · Ctrl+Q quit"
+			return "s unstage · Ctrl+Space mark · n/p hunk · Ctrl+X Ctrl+B views · Ctrl+Q quit"
 		}
-		return "s stage · Ctrl+U revert · Ctrl+Space mark · n/p hunk · Ctrl+T branches · Ctrl+Q quit"
+		return "s stage · Ctrl+U revert · Ctrl+Space mark · n/p hunk · Ctrl+X Ctrl+B views · Ctrl+Q quit"
 	}
-	return "Ctrl+C Ctrl+C commit · Esc leave · Ctrl+T branches · Ctrl+Q quit"
+	return "Ctrl+C Ctrl+C commit · Esc leave · Ctrl+X Ctrl+B views · Ctrl+Q quit"
 }

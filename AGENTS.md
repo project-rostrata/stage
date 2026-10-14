@@ -51,7 +51,7 @@ main -> ui -> (screen, input, patch, git)
 - Every command runs as `git -c core.fsmonitor=false --literal-pathspecs …` (`guarded` in `git/repo.go`), including `git commit`. The first stops a repository's config from running a program on every refresh. The second means a path never acts as a pattern. They're flags rather than environment variables so the audit trail shows them.
 - Files stage keeps in `.git` (the draft and the audit trail) are opened with `openFile`, which never follows a symbolic link.
 - Every command that changes something goes through `Repo.write` (or `CommitDraft`), which appends it to the audit trail, `.git/stage.log`. Don't run a write command any other way. A command that worked but couldn't be logged is reported as an error.
-- Set `GIT_OPTIONAL_LOCKS=0` for read-only commands (`status`, `diff`), so a background refresh never contends with the human's own git commands in another terminal.
+- Set `GIT_OPTIONAL_LOCKS=0` for read-only commands (`status`, `diff`, `log`), so a background refresh never contends with the human's own git commands in another terminal.
 - Read-only commands may run on every refresh. Write commands (`add`, `restore`, `apply`, `commit`, `rm`, `clean`, `switch`) run only from an explicit keypress, and a destructive one only after its `y/N` prompt.
 
 ## Security review
@@ -59,7 +59,7 @@ main -> ui -> (screen, input, patch, git)
 The brief's threat model (§4, "Security") lists what stage trusts. Check every change against it:
 - git is run with an argument list, never a shell, through `guarded`.
 - Paths come after `--`.
-- `diff` keeps `--no-ext-diff --no-textconv`.
+- `diff` and `diff-tree` keep `--no-ext-diff --no-textconv`, and `log` keeps `--no-show-signature`.
 - Nothing reaches the terminal except through `screen/`, apart from the suspended `git commit`.
 - No file is written or read through a symbolic link that a repository could plant.
 - stage still runs no network command and never reads credentials.

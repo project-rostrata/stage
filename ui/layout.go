@@ -17,9 +17,11 @@ const (
 // layout is where each pane goes, as in the human's git-cola window: Commit
 // above Status on the left, about a quarter of the width, and Diff on the
 // right. The bottom row is the status bar. The branch list takes the whole
-// body instead.
+// body instead. The history view keeps the column, split in half: its
+// commits need more room than a commit message.
 type layout struct {
 	commit, status, diff, whole, bar rect
+	commits, files                   rect
 	tooSmall                         bool
 }
 
@@ -29,11 +31,14 @@ func newLayout(w, h int) layout {
 	}
 	left := max(w/4, minLeftWidth)
 	body := h - 1
+	half := body / 2
 	return layout{
-		commit: rect{0, 0, left, commitHeight},
-		status: rect{0, commitHeight, left, body - commitHeight},
-		diff:   rect{left, 0, w - left, body},
-		whole:  rect{0, 0, w, body},
-		bar:    rect{0, body, w, 1},
+		commit:  rect{0, 0, left, commitHeight},
+		status:  rect{0, commitHeight, left, body - commitHeight},
+		diff:    rect{left, 0, w - left, body},
+		whole:   rect{0, 0, w, body},
+		commits: rect{0, 0, left, half},
+		files:   rect{0, half, left, body - half},
+		bar:     rect{0, body, w, 1},
 	}
 }

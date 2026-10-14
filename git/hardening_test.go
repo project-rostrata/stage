@@ -158,3 +158,42 @@ func TestAGitInTheRepositoryIsNotRun(t *testing.T) {
 		t.Error("the planted git ran")
 	}
 }
+
+// A repository's config can ask git log to check every signature it shows,
+// with a program it names. A signed commit is only a header in the commit
+// object, so a .git from somewhere else can hold one.
+func TestHistoryDoesntCheckSignatures(t *testing.T) {
+	r, dir := repo(t)
+	marker := filepath.Join(t.TempDir(), "ran")
+	write(t, dir, ".git/fake-gpg", "#!/bin/sh\ntouch '"+marker+"'\n")
+	if err := os.Chmod(filepath.Join(dir, ".git", "fake-gpg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "config", "gpg.program", filepath.Join(dir, ".git", "fake-gpg"))
+	run(t, dir, "config", "log.showSignature", "true")
+	head := strings.TrimSpace(run(t, dir, "rev-parse", "HEAD"))
+	tree := strings.TrimSpace(run(t, dir, "rev-parse", "HEAD^{tree}"))
+	signed := "tree " + tree + "\nparent " + head + "\n" +
+		"author Test <test@example.com> 1791700000 +0000\ncommitter Test <test@example.com> 1791700000 +0000\n" +
+		"gpgsig -----BEGIN PGP SIGNATURE-----\n \n AAAA\n -----END PGP SIGNATURE-----\n\nSigned\n"
+	write(t, dir, ".git/signed", signed)
+	commit := strings.TrimSpace(run(t, dir, "hash-object", "-t", "commit", "-w", ".git/signed"))
+	run(t, dir, "update-ref", "refs/heads/main", commit)
+
+	commits, err := r.Log(10)
+	if err != nil || len(commits) != 2 || commits[0].Subject != "Signed" {
+		t.Fatalf("Log: %+v, %v", commits, err)
+	}
+	if _, err := r.CommitFiles(commits[0]); err != nil {
+		t.Fatal(err)
+	}
+	if exists(t, marker) {
+		t.Fatal("reading the history ran gpg.program")
+	}
+
+	// The trap is real: plain git log springs it.
+	run(t, dir, "log", "-1")
+	if !exists(t, marker) {
+		t.Fatal("gpg.program didn't run under plain git log, so this test proves nothing")
+	}
+}

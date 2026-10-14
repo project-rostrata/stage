@@ -249,3 +249,36 @@ What was built:
   - a dirty tree asks first, and `n` cancels;
   - the colours on the cursor row, the current branch and `↓1`.
 - Later the same day: a commit that leaves the tree clean moves to the branch list (`commit` in `ui/app.go`). Checked in tmux: a partial commit stays on the panes; committing the rest moves to the list with git's summary line in the bar.
+
+### History view — DONE
+
+At the human's request: the current branch's history in the three panes' places (commits top left, the selected commit's files below, the selected file's diff on the right). The human chose Ctrl+X Ctrl+B, Emacs-style, to switch views from anywhere, in place of Ctrl+T.
+
+What was built:
+- `git/log.go`:
+  - `Log` (`git log --no-show-signature`, empty before the first commit);
+  - `CommitFiles` and `CommitDiff` (`git diff-tree` against the first parent, or `--root`).
+  - Hashes are checked to be hashes before they go on a command line.
+- `ui/history_view.go`: the commit and file lists and a diff pane of its own. 200 commits are read at a time.
+- `ui/layout.go`: the left column split in half for the history.
+- `ui/app.go`:
+  - the Ctrl+X Ctrl+B chord and the `c`/`b`/`h` choice;
+  - the history's keys;
+  - reloading it on refresh;
+  - the hints.
+
+**Checked:**
+- Tests:
+  - parsing `log` and `--name-status -z` output, including bad hashes;
+  - against a real repository with `diff.noprefix` and `color.ui=always` set: the order, a merge's files against its first parent, a root commit, a rename and its diff;
+  - an unborn branch;
+  - a planted signed commit with `log.showSignature` and `gpg.program` (the test fails without `--no-show-signature`);
+  - cursors kept by hash, and by path within a commit;
+  - reading further at the end;
+  - row layout at a narrow width.
+- In tmux:
+  - Ctrl+X Ctrl+B `h` / `b` / `c` from the branch list, the panes and the Commit editor;
+  - Ctrl+X then another key cancels, and that key isn't typed into the message;
+  - browsing a rename commit and a merge;
+  - `n` in the diff;
+  - `G` through a 451-commit history reads 200 more at each end.

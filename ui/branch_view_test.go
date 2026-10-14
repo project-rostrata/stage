@@ -29,6 +29,12 @@ func TestBranchViewKeepsTheCursorOnItsBranch(t *testing.T) {
 func drawn(v *branchView, w, h int) []string {
 	g := screen.NewGrid(w, h)
 	v.draw(g, rect{0, 0, w, h}, darkPalette())
+	return innerRows(g)
+}
+
+// innerRows returns the rows inside a grid's border, trimmed.
+func innerRows(g *screen.Grid) []string {
+	w, h := g.Size()
 	var rows []string
 	for y := 1; y < h-1; y++ {
 		var b strings.Builder
