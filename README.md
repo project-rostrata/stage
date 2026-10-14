@@ -50,7 +50,7 @@ to another terminal window and back refreshes everything.
 | Show the git commands stage ran | Ctrl+O (Esc closes) |
 | Switch views | Ctrl+X Ctrl+B, then `c` changes, `b` branches or `h` history, from anywhere |
 | Switch to a branch | Enter in the branch list (asks first if you have uncommitted changes) |
-| Quit | Ctrl+Q |
+| Quit | Ctrl+Q, or Ctrl+X Ctrl+C from anywhere (asks first if something is staged or a message is written) |
 
 The branch list shows your local branches, the most recently committed to first: `*` on the
 current one, `↓N` if it's behind its upstream as of your last `git fetch` (stage never fetches),

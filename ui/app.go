@@ -324,14 +324,17 @@ func (a *App) handle(k input.Key) {
 	}
 }
 
-// handleViewChord reads the rest of Ctrl+X Ctrl+B, Emacs's list of buffers:
-// Ctrl+B, then a letter naming the view to show.
+// handleViewChord reads the rest of a Ctrl+X chord: Ctrl+C quits, as in
+// Emacs, and Ctrl+B (Emacs's list of buffers) then a letter shows a view.
 func (a *App) handleViewChord(k input.Key) {
 	if a.pendingX {
 		a.pendingX = false
-		if k.Is('b', input.Ctrl) {
+		switch {
+		case k.Is('b', input.Ctrl):
 			a.choosing = true
-		} else {
+		case k.Is('c', input.Ctrl):
+			a.askQuit()
+		default:
 			a.info = "Ctrl+X cancelled"
 		}
 		return
@@ -346,6 +349,28 @@ func (a *App) handleViewChord(k input.Key) {
 		a.showHistory()
 	default:
 		a.info = "Cancelled"
+	}
+}
+
+// askQuit quits, asking first when there's work in progress: something
+// staged, or a commit message. Both are kept, but the human may have meant
+// to commit them first. No leaves stage where it was.
+func (a *App) askQuit() {
+	a.reload() // the staged count must be current, not as of the last refresh
+	var work []string
+	if a.staged > 0 {
+		work = append(work, "staged changes")
+	}
+	if strings.TrimSpace(a.msg.message()) != "" {
+		work = append(work, "a commit message")
+	}
+	if len(work) == 0 {
+		a.quit = true
+		return
+	}
+	a.ask = &question{
+		text:   "Quit? You have " + strings.Join(work, " and ") + " (y/N)",
+		action: func() (string, error) { a.quit = true; return "", nil },
 	}
 }
 
@@ -920,7 +945,7 @@ func (a *App) drawBar(g *screen.Grid, r rect) {
 		g.Put(r.x+1, r.y, "Ctrl+C-  then Ctrl+C commit · Ctrl+K clear the message", a.pal.statusBar, r.w-2)
 		return
 	case a.pendingX:
-		g.Put(r.x+1, r.y, "Ctrl+X-  then Ctrl+B views", a.pal.statusBar, r.w-2)
+		g.Put(r.x+1, r.y, "Ctrl+X-  then Ctrl+B views · Ctrl+C quit", a.pal.statusBar, r.w-2)
 		return
 	case a.choosing:
 		g.Put(r.x+1, r.y, "Show:  c changes · b branches · h history", a.pal.statusBar, r.w-2)

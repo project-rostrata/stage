@@ -219,3 +219,10 @@ The human asked for a history view reusing the three panes: the history top left
 - **Rows show the short hash and the summary; the files pane's title shows the commit's local time.** At 110 columns the left column is 27 wide, too narrow for a time on every row. The hash was first in the title too, but that cut the time off.
 - **`--no-show-signature`.** A repository's config can set `log.showSignature` and `gpg.program`, and plain `git log` then runs that program for any commit carrying a signature header, which a planted `.git` can hold. This was checked with plain git before the flag went in.
 - **Hashes are checked before they're passed back to git.** They come from git's own output, but a hash is the one argument that can't follow `--`.
+
+## 2026-10-14 — Ctrl+X Ctrl+C quits, asking when work is in progress
+
+The human asked for Emacs's quit key, with a plain y/N first when anything is staged or a commit message is written. No, or any other key, leaves stage on the screen it was on.
+- Both are kept on quitting: the index is git's, and the message is in `.git/STAGE_MSG`. The question is there because the human may have meant to commit first.
+- The staged count is re-read before asking, as it is before a commit, so a change made in another terminal counts.
+- Ctrl+Q still quits without asking, as before.

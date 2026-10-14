@@ -220,7 +220,7 @@ Any other key cancels. This replaced Ctrl+T, which only toggled between two view
 | Show or hide the audit trail | Ctrl+O | Shown in place of the Diff pane; Esc also closes it |
 | Switch views | Ctrl+X Ctrl+B, then `c` changes, `b` branches or `h` history | Emacs's list-buffers. Works everywhere, the Commit editor included. |
 | Switch to the branch under the cursor (branch list) | Enter | Asks y/N first when the tree is dirty |
-| Quit | Ctrl+Q | |
+| Quit | Ctrl+Q, or Ctrl+X Ctrl+C | Ctrl+X Ctrl+C is Emacs's, and works everywhere. It asks y/N first when something is staged or a commit message is written; no stays where you were. |
 
 The message editor takes the usual Emacs keys:
 - Ctrl+A/E/F/B/D/K/Y/W
