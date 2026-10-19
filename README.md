@@ -17,6 +17,19 @@ dependency is a pinned Go toolchain, fetched and checksum-verified by a script.
 
 ## Install
 
+On any x86_64 Linux machine with git, without checking out the repository:
+
+```
+curl -fLo ~/.local/bin/stage https://github.com/project-rostrata/stage/raw/main/dist/stage-linux-amd64
+chmod +x ~/.local/bin/stage
+stage --version
+```
+
+The same command updates it. `dist/SHA256SUMS` has the binary's checksum. The binary is static,
+so it runs on any distribution.
+
+From a checkout instead:
+
 ```
 ./install.sh
 ```
@@ -24,6 +37,7 @@ dependency is a pinned Go toolchain, fetched and checksum-verified by a script.
 This fetches the pinned Go toolchain into `.toolchain/` (checked against `toolchain.sha256`),
 builds the static `stage` binary, and links it into `~/.local/bin`. Then run `stage` anywhere
 inside a git repository. `./test.sh` runs the formatting check, `go vet` and the tests.
+`./release.sh v1.2.3` builds a release into `dist/`, commits it and tags it.
 
 ## Using it
 

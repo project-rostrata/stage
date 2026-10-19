@@ -37,7 +37,7 @@ The user is the human alone, on Ubuntu, in GNOME Terminal. There is no packaging
 - **The only build dependency is the Go toolchain**, pinned to an exact release:
   - It is fetched by a script into a gitignored `.toolchain/`.
   - It is checked against a git-tracked `toolchain.sha256` before use, the same discipline as the siblings' `DEPENDENCIES.sha1`.
-  - Neither the toolchain nor the built binary is ever committed.
+  - The toolchain is never committed. Nor is a development build; the one exception is a release binary in `dist/`, made by `release.sh` (decided 2026-10-18), so the human's machines can install without a checkout.
   - Pinned release: **go1.27.2**, `go1.27.2.linux-amd64.tar.gz`, sha256 `ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5`.
 - **No hidden build-tool magic.** `go build`, `go test` and `go vet`, called from short hand-written scripts. No Makefile generators, no goreleaser.
 - **v1 scope is fixed** (section 4). Anything else goes in section 6 until the human asks for it.

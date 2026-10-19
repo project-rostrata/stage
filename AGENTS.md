@@ -88,7 +88,8 @@ Short, readable bash, `set -euo pipefail`, no logic that belongs in Go:
 - `build.sh`: `CGO_ENABLED=0 go build -trimpath -o stage .` with the fetched toolchain.
 - `test.sh`: `go vet ./...` then `go test ./...`.
 - `install.sh`: symlink the built binary into `~/.local/bin/stage`.
+- `release.sh vX.Y.Z`: on a clean tree, test, build `dist/stage-linux-amd64` with the version stamped in, write `dist/SHA256SUMS`, commit both and tag the commit.
 
 ## Dependency policy
 
-The standard library only. Any third-party module, `golang.org/x/*` included, needs the human's explicit sign-off before it's added. The Go toolchain itself is pinned in `toolchain.sha256` and fetched by script, never committed. Neither is the built `stage` binary.
+The standard library only. Any third-party module, `golang.org/x/*` included, needs the human's explicit sign-off before it's added. The Go toolchain itself is pinned in `toolchain.sha256` and fetched by script, never committed. The `stage` binary that `build.sh` makes isn't committed either. The one exception is a release in `dist/`, made only by `release.sh`, so the human's machines can install with `curl` and no checkout.

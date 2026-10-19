@@ -226,3 +226,15 @@ The human asked for Emacs's quit key, with a plain y/N first when anything is st
 - Both are kept on quitting: the index is git's, and the message is in `.git/STAGE_MSG`. The question is there because the human may have meant to commit first.
 - The staged count is re-read before asking, as it is before a commit, so a change made in another terminal counts.
 - Ctrl+Q still quits without asking, as before.
+
+## 2026-10-18 — Releases are committed binaries in dist/
+
+The human wants stage on their own Linux machines without checking out and building, and not distributed more widely. They chose to commit the release binary, as an exception to the family's no-binaries-in-git rule.
+- **`release.sh vX.Y.Z`** builds `dist/stage-linux-amd64` with `-trimpath -buildvcs=false` and the version stamped in, writes `dist/SHA256SUMS`, commits both, and tags the commit. It refuses a dirty tree, an existing tag, or failing tests.
+- **Only releases are committed,** never the `build.sh` binary, so history grows by one binary per release, not per change.
+- **A machine installs or updates with `curl`** from the repository's raw file URL into `~/.local/bin`. The binary is static, so one build runs on every x86_64 distribution.
+- **`stage --version`** prints the release, or `dev` for a `build.sh` build, so each machine's version can be checked.
+- **Alternatives turned down:**
+  - GitHub Releases needs `gh` or the web UI for each release.
+  - A `.deb` or apt repository is more machinery than a few personal machines need.
+  - `go install` needs Go on every machine.

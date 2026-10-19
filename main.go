@@ -15,7 +15,14 @@ import (
 	"stage/ui"
 )
 
+// version is set by release.sh to the release's tag. A build from build.sh is "dev".
+var version = "dev"
+
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println("stage", version)
+		return
+	}
 	os.Exit(run())
 }
 
